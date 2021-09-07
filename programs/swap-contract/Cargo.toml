@@ -1,0 +1,21 @@
+[package]
+name = "swap-contract"
+version = "0.1.0"
+description = "Created with Anchor"
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "swap_contract"
+
+[features]
+no-entrypoint = []
+no-idl = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang = "0.14.0"
+switchboard-program = "0.1.52"
+solana-program = "1.7.11"
+decode_account = { version = "1.0.0", path = "/Users/mfrager/Build/solana/crates/decode-account" }
