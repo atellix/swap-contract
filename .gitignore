@@ -3,4 +3,5 @@
 target
 **/*.rs.bk
 js/node_modules/*
-
+*.swp
+*.swo
