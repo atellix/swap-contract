@@ -343,6 +343,15 @@ async function main() {
         )
         await provider.send(tx, [swapData])
     }
+    /*console.log({
+        rootData: new PublicKey(rootData.pubkey).toString(),
+        authData: authDataPK.toString(),
+        swapAdmin: swapAdmin1.publicKey.toString(),
+        swapData: swapDataPK.toString(),
+        inbInfo: new PublicKey(tkiData1.pubkey).toString(),
+        outInfo: new PublicKey(tkiData2.pubkey).toString(),
+        feesAccount: feesAcct.publicKey.toString(),
+    })*/
     await swapContract.rpc.createSwap(
         rootData.nonce,
         {
@@ -351,8 +360,8 @@ async function main() {
                 authData: authDataPK,
                 swapAdmin: swapAdmin1.publicKey,
                 swapData: swapDataPK,
-                inbInfo: new PublicKey(tokData1.pubkey),
-                outInfo: new PublicKey(tokData2.pubkey),
+                inbInfo: new PublicKey(tkiData1.pubkey),
+                outInfo: new PublicKey(tkiData2.pubkey),
                 feesAccount: feesAcct.publicKey,
             },
             signers: [swapAdmin1],
@@ -360,19 +369,29 @@ async function main() {
     )
 
     console.log('Swap')
-    await swapContract.rpc.createSwap(
+    const userToken1 = await associatedTokenAddress(provider.wallet.publicKey, tokenMint1)
+    const userToken2 = await associatedTokenAddress(provider.wallet.publicKey, tokenMint2)
+    await swapContract.rpc.swap(
         rootData.nonce,
+        tokData1.nonce,
+        tokData2.nonce,
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
                 authData: authDataPK,
-                swapAdmin: swapAdmin1.publicKey,
+                swapUser: provider.wallet.publicKey,
                 swapData: swapDataPK,
-                inbInfo: new PublicKey(tokData1.pubkey),
-                outInfo: new PublicKey(tokData2.pubkey),
-                feesAccount: feesAcct.publicKey,
+                inbInfo: new PublicKey(tkiData1.pubkey),
+                inbTokenSrc: new PublicKey(userToken1.pubkey),
+                inbTokenDst: new PublicKey(tokData1.pubkey),
+                inbMint: tokenMint1,
+                outInfo: new PublicKey(tkiData2.pubkey),
+                outTokenSrc: new PublicKey(tokData2.pubkey),
+                outTokenDst: new PublicKey(userToken2.pubkey),
+                outMint: tokenMint2,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                //feesAccount: feesAcct.publicKey,
             },
-            signers: [swapAdmin1],
         }
     )
 }

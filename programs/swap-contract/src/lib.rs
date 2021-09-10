@@ -630,11 +630,15 @@ pub mod swap_contract {
         inp_out_nonce: u8,         // Associated token nonce for out_token_src
     ) -> ProgramResult {
         let acc_root = &ctx.accounts.root_data.to_account_info();
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
 
         // Verify program data
         let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
             .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
         verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
+        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
+
+        msg!("Atellix: Verified program data");
 
         // TODO: verify merchants with net authority if needed
 
@@ -687,7 +691,7 @@ pub mod swap_contract {
             return Err(ErrorCode::InvalidDerivedAccount.into());
         }
 
-        msg!("Tokens verified ready to swap");
+        msg!("Atellix: Tokens verified ready to swap");
 
         Ok(())
     }
@@ -782,6 +786,7 @@ pub struct Deposit<'info> {
 #[derive(Accounts)]
 pub struct Swap<'info> {
     pub root_data: ProgramAccount<'info, RootData>,
+    pub auth_data: AccountInfo<'info>,
     #[account(signer)]
     pub swap_user: AccountInfo<'info>,
     pub swap_data: ProgramAccount<'info, SwapData>,
