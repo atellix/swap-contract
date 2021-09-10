@@ -1,12 +1,15 @@
 {
-    "tokenMintUSDV": "CmT3XgAz41hMBAWMkvdrChVAZH61MdHebKithCaVQeau",
-    "swapContractProgram": "hz3ZmhraJCSZod17i8E3WhHvhfGcwek9LQVRrCHHFq2",
-    "swapContractProgramData": "CuCTxRAamjhXhACtAv45cYtquURgNr8eSEFKL6ZACU9B",
-    "swapContractRBAC": "7rjNYXY1zdJJfJxAHp4LK2v9JceriA3CCecqRt6JfeBe",
-    "swapAdmin1": "7wa6pdDJ6tMjXiw8GVGN69A38BNm93c24KAVDKW6jiMB",
-    "swapAdmin1_secret": "6fb3dxhjnxqn5pb784xjqfr29zhqwbd1f36mca68fnjqr7zjysp6e879enyqz83wf0qjz5wfrh5yy8pdhzj9pgjh289tjrfac92t5ng",
-    "swapDeposit1": "GoF1jwaSQsoHfRkTcAVwhswDGvx462arQqfwrfEi3Ecj",
-    "swapDeposit1_secret": "4xzdbpa2gbk74ftc856y16rn6dbnbrkgd29he4v4fb1bscmetmaendyxhafrmm2yapncb2x9z3rjby820ct8w7pr5c22wc9t1b0m3v0",
-    "swapWithdraw1": "C4tymX2DThbDZvpT8XbKdU8iSMNBbwvn7nipGGsw5HH",
-    "swapWithdraw1_secret": "b0c1177svedhhf2fk4xs3th0sspe804bv02n6vt6qmsgzj0g8qeg5nebb50fg1sh0z8x07aepvpzrnyar0czm8rf6skx89c880c28w0"
+    "swapContractProgram": "HGBMGmNLtPU38iVGt9N1vEYXtYCtNnkQ5eqZUvCp7f6h",
+    "swapContractProgramData": "3Ysnmeb81TdZmA2r5FKTDBvUQ7ZyGCH7kpubjWE9ALj9",
+    "swapContractRootData": "5x1FW8ue4gzuaJLg1zT5M9hKko5azpVxXqZ3j4bUB4Lj",
+    "tokenMint1": "3aZm3YAvSsAHNG42SMp3UeJykBz2iHk2bWb3SAYQRJef",
+    "tokenMint2": "BokGcUTvyS6sxejcsk6q6nw8273ueGWTz9bvWHnik6RZ",
+    "swapContractRBAC": "AT1u8dyqeX29XgnU5qaneZ7HjMiFb72hBaiYhxVrmPio",
+    "swapAdmin1": "AqQVrTo2RJVPBZpXdxJLX6MbQtBHmJQWqW8jDR9Jd5th",
+    "swapAdmin1_secret": "g9h67gwmjr5szz4qh07a4dsngqpgfn0y7f1jp5gaf6879k2ev2fs47x17m5f1f7pdw6f1yzjwd2v5x0v6ccttxtpx6rf2mrh2tyq1xg",
+    "swapDeposit1": "DHXV7M6dFT7wxhaAk57tYtcjgP2fpPui6h3mYFyjSQsY",
+    "swapDeposit1_secret": "nq6m7fcasbxhjsnsr4grzpfan7w384sk4th3t6da7feyvzp8nhavd201a8jc5tvcj6eprtrkkt3rk8pqj52z00qwn4c44z4rmaysrdr",
+    "swapWithdraw1": "2WJc2cpWtYwRMpdS4GoqEwKGXondMMf6GraHh4LdnpGf",
+    "swapWithdraw1_secret": "qf7mkm094k037k7rwqsj4r46yt0h7bjq89pxb9ky7557g3cvagthcqbfd95ehxcskeqdgz078377qvks1dnp81tg522nbs2g8ha6840",
+    "swapData": "6tTGqBeciMDsEhVH4bkS4ieqTEUDiNW4MTFs92BVosf"
 }

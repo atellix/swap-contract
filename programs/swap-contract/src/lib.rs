@@ -515,7 +515,7 @@ pub mod swap_contract {
 
         // Verify program data
         let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
-            .map_err|_| ErrorCode::InvalidDerivedAccount)?;
+            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
         verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
         verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
 
@@ -538,8 +538,8 @@ pub mod swap_contract {
             oracle_verify_min: 0,
             oracle_verify_max: 0,
             symmetrical_swap: true,
-            inb_token_info: &acc_inb,
-            out_token_info: &acc_out,
+            inb_token_info: *acc_inb.key,
+            out_token_info: *acc_out.key,
             fees_inbound: true,
             fees_account: Pubkey::default(),
             fees_bps: 0,
@@ -622,11 +622,75 @@ pub mod swap_contract {
 
 /*    pub fn withdraw(ctx: Context<Initialize>) -> ProgramResult {
         Ok(())
-    }
-
-    pub fn swap(ctx: Context<Initialize>) -> ProgramResult {
-        Ok(())
     } */
+
+    pub fn swap(ctx: Context<Swap>,
+        inp_root_nonce: u8,
+        inp_inb_nonce: u8,         // Associated token nonce for inb_token_dst
+        inp_out_nonce: u8,         // Associated token nonce for out_token_src
+    ) -> ProgramResult {
+        let acc_root = &ctx.accounts.root_data.to_account_info();
+
+        // Verify program data
+        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
+            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
+
+        // TODO: verify merchants with net authority if needed
+
+        let acc_inb = &ctx.accounts.inb_info.to_account_info();
+        let acc_inb_mint = &ctx.accounts.inb_mint.to_account_info();
+        let acc_out = &ctx.accounts.out_info.to_account_info();
+        let acc_out_mint = &ctx.accounts.out_mint.to_account_info();
+        let sw = &ctx.accounts.swap_data;
+        verify_matching_accounts(&sw.inb_token_info, acc_inb.key, Some(String::from("Invalid inbound token info")))?;
+        verify_matching_accounts(&sw.out_token_info, acc_out.key, Some(String::from("Invalid outbound token info")))?;
+        let inb_info = &mut ctx.accounts.inb_info;
+        let out_info = &mut ctx.accounts.out_info;
+        verify_matching_accounts(&inb_info.mint, acc_inb_mint.key, Some(String::from("Invalid inbound mint")))?;
+        verify_matching_accounts(&out_info.mint, acc_out_mint.key, Some(String::from("Invalid outbound mint")))?;
+
+        let acc_inb_token_src = &mut ctx.accounts.inb_token_src.to_account_info();
+        let acc_inb_token_dst = &mut ctx.accounts.inb_token_dst.to_account_info();
+        let acc_out_token_src = &mut ctx.accounts.out_token_src.to_account_info();
+        let acc_out_token_dst = &mut ctx.accounts.out_token_dst.to_account_info();
+
+        // Verify inbound dest associated token
+        let spl_token: Pubkey = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
+        let asc_token: Pubkey = Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL").unwrap();
+        let derived_key_in = Pubkey::create_program_address(
+            &[
+                &acc_root.key.to_bytes(),
+                &spl_token.to_bytes(),
+                &acc_inb_mint.key.to_bytes(),
+                &[inp_inb_nonce]
+            ],
+            &asc_token
+        ).map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        if derived_key_in != *acc_inb_token_dst.key {
+            msg!("Invalid inbound token destination account");
+            return Err(ErrorCode::InvalidDerivedAccount.into());
+        }
+
+        // Verify outbound src associated token
+        let derived_key_out = Pubkey::create_program_address(
+            &[
+                &acc_root.key.to_bytes(),
+                &spl_token.to_bytes(),
+                &acc_out_mint.key.to_bytes(),
+                &[inp_out_nonce]
+            ],
+            &asc_token
+        ).map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        if derived_key_out != *acc_out_token_src.key {
+            msg!("Invalid outbound token source account");
+            return Err(ErrorCode::InvalidDerivedAccount.into());
+        }
+
+        msg!("Tokens verified ready to swap");
+
+        Ok(())
+    }
 
     pub fn oracle_result(ctx: Context<OracleResult>) -> ProgramResult {
         let acc_data = &ctx.accounts.oracle_data.to_account_info();
@@ -713,6 +777,33 @@ pub struct Deposit<'info> {
     pub token_info: ProgramAccount<'info, TokenInfo>,
     #[account(address = token::ID)]
     pub token_program: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct Swap<'info> {
+    pub root_data: ProgramAccount<'info, RootData>,
+    #[account(signer)]
+    pub swap_user: AccountInfo<'info>,
+    pub swap_data: ProgramAccount<'info, SwapData>,
+    #[account(mut)]
+    pub inb_info: ProgramAccount<'info, TokenInfo>,
+    #[account(mut)]
+    pub inb_token_src: AccountInfo<'info>,
+    #[account(mut)]
+    pub inb_token_dst: AccountInfo<'info>,
+    pub inb_mint: AccountInfo<'info>,
+    #[account(mut)]
+    pub out_info: ProgramAccount<'info, TokenInfo>,
+    #[account(mut)]
+    pub out_token_src: AccountInfo<'info>,
+    #[account(mut)]
+    pub out_token_dst: AccountInfo<'info>,
+    pub out_mint: AccountInfo<'info>,
+    #[account(address = token::ID)]
+    pub token_program: AccountInfo<'info>,
+    // Fees
+    // Oracle
+    // Merchant approval
 }
 
 #[derive(Accounts)]
