@@ -5,7 +5,7 @@ use num_enum::TryFromPrimitive;
 use switchboard_program;
 use switchboard_program::{ FastRoundResultAccountData };
 use anchor_lang::prelude::*;
-use anchor_spl::token::{ self, MintTo };
+use anchor_spl::token::{ self, MintTo, Transfer };
 use solana_program::{
     sysvar, system_instruction, system_program,
     program::{ invoke, invoke_signed },
@@ -628,6 +628,7 @@ pub mod swap_contract {
         inp_root_nonce: u8,
         inp_inb_nonce: u8,         // Associated token nonce for inb_token_dst
         inp_out_nonce: u8,         // Associated token nonce for out_token_src
+        inp_out_tokens: u64,       // Number of tokens to receive
     ) -> ProgramResult {
         let acc_root = &ctx.accounts.root_data.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
@@ -637,8 +638,6 @@ pub mod swap_contract {
             .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
         verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
         verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
-
-        msg!("Atellix: Verified program data");
 
         // TODO: verify merchants with net authority if needed
 
@@ -654,10 +653,10 @@ pub mod swap_contract {
         verify_matching_accounts(&inb_info.mint, acc_inb_mint.key, Some(String::from("Invalid inbound mint")))?;
         verify_matching_accounts(&out_info.mint, acc_out_mint.key, Some(String::from("Invalid outbound mint")))?;
 
-        let acc_inb_token_src = &mut ctx.accounts.inb_token_src.to_account_info();
-        let acc_inb_token_dst = &mut ctx.accounts.inb_token_dst.to_account_info();
-        let acc_out_token_src = &mut ctx.accounts.out_token_src.to_account_info();
-        let acc_out_token_dst = &mut ctx.accounts.out_token_dst.to_account_info();
+        let acc_inb_token_src = ctx.accounts.inb_token_src.to_account_info();
+        let acc_inb_token_dst = ctx.accounts.inb_token_dst.to_account_info();
+        let acc_out_token_src = ctx.accounts.out_token_src.to_account_info();
+        let acc_out_token_dst = ctx.accounts.out_token_dst.to_account_info();
 
         // Verify inbound dest associated token
         let spl_token: Pubkey = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
@@ -692,6 +691,38 @@ pub mod swap_contract {
         }
 
         msg!("Atellix: Tokens verified ready to swap");
+        let mut tokens_inb: u64 = inp_out_tokens;
+        let mut tokens_out: u64 = inp_out_tokens;
+        //let mut tokens_fee: u64 = 0;
+
+        inb_info.amount = inb_info.amount.checked_add(tokens_inb).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        out_info.amount = out_info.amount.checked_sub(tokens_out).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+
+        msg!("Atellix: New Inbound Amount: {}", inb_info.amount.to_string());
+        msg!("Atellix: New Outbound Amount: {}", out_info.amount.to_string());
+
+        let in_accounts = Transfer {
+            from: acc_inb_token_src,
+            to: acc_inb_token_dst,
+            authority: ctx.accounts.swap_user.to_account_info(),
+        };
+        let cpi_prog1 = ctx.accounts.token_program.clone();
+        let in_ctx = CpiContext::new(cpi_prog1, in_accounts);
+        token::transfer(in_ctx, tokens_inb)?;
+
+        let out_seeds = &[
+            ctx.program_id.as_ref(),
+            &[inp_root_nonce],
+        ];
+        let out_signer = &[&out_seeds[..]];
+        let out_accounts = Transfer {
+            from: acc_out_token_src,
+            to: acc_out_token_dst,
+            authority: ctx.accounts.root_data.to_account_info(),
+        };
+        let cpi_prog2 = ctx.accounts.token_program.clone();
+        let out_ctx = CpiContext::new_with_signer(cpi_prog2, out_accounts, out_signer);
+        token::transfer(out_ctx, tokens_out)?;
 
         Ok(())
     }

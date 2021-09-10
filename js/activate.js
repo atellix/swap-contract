@@ -371,10 +371,25 @@ async function main() {
     console.log('Swap')
     const userToken1 = await associatedTokenAddress(provider.wallet.publicKey, tokenMint1)
     const userToken2 = await associatedTokenAddress(provider.wallet.publicKey, tokenMint2)
+    console.log({
+        rootData: new PublicKey(rootData.pubkey).toString(),
+        authData: authDataPK.toString(),
+        swapUser: provider.wallet.publicKey.toString(),
+        swapData: swapDataPK.toString(),
+        inbInfo: new PublicKey(tkiData1.pubkey).toString(),
+        inbTokenSrc: new PublicKey(userToken1.pubkey).toString(),
+        inbTokenDst: new PublicKey(tokData1.pubkey).toString(),
+        inbMint: tokenMint1.toString(),
+        outInfo: new PublicKey(tkiData2.pubkey).toString(),
+        outTokenSrc: new PublicKey(tokData2.pubkey).toString(),
+        outTokenDst: new PublicKey(userToken2.pubkey).toString(),
+        outMint: tokenMint2.toString(),
+    })
     await swapContract.rpc.swap(
         rootData.nonce,
         tokData1.nonce,
         tokData2.nonce,
+        new anchor.BN(999 * 10000),
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
