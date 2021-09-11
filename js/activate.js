@@ -354,6 +354,15 @@ async function main() {
     })*/
     await swapContract.rpc.createSwap(
         rootData.nonce,
+        false,
+        false,
+        false,
+        new anchor.BN(0),
+        new anchor.BN(0),
+        new anchor.BN(20000),
+        new anchor.BN(10000),
+        false,
+        0,
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
@@ -368,7 +377,7 @@ async function main() {
         }
     )
 
-    console.log('Swap')
+    /*console.log('Swap')
     const userToken1 = await associatedTokenAddress(provider.wallet.publicKey, tokenMint1)
     const userToken2 = await associatedTokenAddress(provider.wallet.publicKey, tokenMint2)
     console.log({
@@ -389,6 +398,7 @@ async function main() {
         rootData.nonce,
         tokData1.nonce,
         tokData2.nonce,
+        true, // True - Buy, False - Sell
         new anchor.BN(999 * 10000),
         {
             accounts: {
@@ -399,16 +409,14 @@ async function main() {
                 inbInfo: new PublicKey(tkiData1.pubkey),
                 inbTokenSrc: new PublicKey(userToken1.pubkey),
                 inbTokenDst: new PublicKey(tokData1.pubkey),
-                inbMint: tokenMint1,
                 outInfo: new PublicKey(tkiData2.pubkey),
                 outTokenSrc: new PublicKey(tokData2.pubkey),
                 outTokenDst: new PublicKey(userToken2.pubkey),
-                outMint: tokenMint2,
                 tokenProgram: TOKEN_PROGRAM_ID,
                 //feesAccount: feesAcct.publicKey,
             },
         }
-    )
+    )*/
 }
 
 console.log('Begin')

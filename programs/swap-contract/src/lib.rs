@@ -505,6 +505,15 @@ pub mod swap_contract {
 
     pub fn create_swap(ctx: Context<CreateSwap>,
         inp_root_nonce: u8,         // RootData nonce
+        inp_oracle_rates: bool,     // Use oracle for swap rates
+        inp_oracle_inverse: bool,   // Inverse the oracle for "Buy" orders
+        inp_oracle_verify: bool,    // Use oracle to verify price range (to check peg stability on stablecoins)
+        inp_verify_min: u64,        // Minimum of price range (0 for unused)
+        inp_verify_max: u64,        // Maximum of price range (0 for unused)
+        inp_swap_rate: u64,         // Swap rate
+        inp_base_rate: u64,         // Base rate
+        inp_fees_inbound: bool,     // Take fees from inbound token (alternatively use the outbound token)
+        inp_fees_bps: u32,          // Fees basis points
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
         let acc_swap = &ctx.accounts.swap_data.to_account_info(); 
@@ -530,19 +539,26 @@ pub mod swap_contract {
             return Err(ErrorCode::InvalidParameters.into());
         }
 
+        let mut oracle: Pubkey = Pubkey::default();
+        if inp_oracle_rates || inp_oracle_verify {
+            let acc_orac = ctx.remaining_accounts.get(0).unwrap();
+            oracle = *acc_orac.key;
+        }
         let sw = SwapData {
             active: true,
-            oracle_data: Pubkey::default(),
-            oracle_rates: false,
-            oracle_verify: false,
-            oracle_verify_min: 0,
-            oracle_verify_max: 0,
-            symmetrical_swap: true,
+            oracle_data: oracle,
+            oracle_rates: inp_oracle_rates,
+            oracle_inverse: inp_oracle_inverse,
+            oracle_verify: inp_oracle_verify,
+            oracle_verify_min: inp_verify_min,
+            oracle_verify_max: inp_verify_max,
+            rate_swap: inp_swap_rate,
+            rate_base: inp_base_rate,
             inb_token_info: *acc_inb.key,
             out_token_info: *acc_out.key,
-            fees_inbound: true,
+            fees_inbound: inp_fees_inbound,
             fees_account: Pubkey::default(),
-            fees_bps: 0,
+            fees_bps: inp_fees_bps,
         };
         let mut sw_data = acc_swap.try_borrow_mut_data()?;
         let sw_dst: &mut [u8] = &mut sw_data;
@@ -626,9 +642,11 @@ pub mod swap_contract {
 
     pub fn swap(ctx: Context<Swap>,
         inp_root_nonce: u8,
-        inp_inb_nonce: u8,         // Associated token nonce for inb_token_dst
-        inp_out_nonce: u8,         // Associated token nonce for out_token_src
-        inp_out_tokens: u64,       // Number of tokens to receive
+        inp_inb_nonce: u8,          // Associated token nonce for inb_token_dst
+        inp_out_nonce: u8,          // Associated token nonce for out_token_src
+        inp_is_buy: bool,           // Is "Buy" order, otherwise its a "Sell" order
+                                    // Buy orders receive X out tokens, Sell orders send X inb tokens
+        inp_tokens: u64,            // Number of tokens to send/receive (X tokens)
     ) -> ProgramResult {
         let acc_root = &ctx.accounts.root_data.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
@@ -642,16 +660,12 @@ pub mod swap_contract {
         // TODO: verify merchants with net authority if needed
 
         let acc_inb = &ctx.accounts.inb_info.to_account_info();
-        let acc_inb_mint = &ctx.accounts.inb_mint.to_account_info();
         let acc_out = &ctx.accounts.out_info.to_account_info();
-        let acc_out_mint = &ctx.accounts.out_mint.to_account_info();
         let sw = &ctx.accounts.swap_data;
         verify_matching_accounts(&sw.inb_token_info, acc_inb.key, Some(String::from("Invalid inbound token info")))?;
         verify_matching_accounts(&sw.out_token_info, acc_out.key, Some(String::from("Invalid outbound token info")))?;
         let inb_info = &mut ctx.accounts.inb_info;
         let out_info = &mut ctx.accounts.out_info;
-        verify_matching_accounts(&inb_info.mint, acc_inb_mint.key, Some(String::from("Invalid inbound mint")))?;
-        verify_matching_accounts(&out_info.mint, acc_out_mint.key, Some(String::from("Invalid outbound mint")))?;
 
         let acc_inb_token_src = ctx.accounts.inb_token_src.to_account_info();
         let acc_inb_token_dst = ctx.accounts.inb_token_dst.to_account_info();
@@ -665,7 +679,7 @@ pub mod swap_contract {
             &[
                 &acc_root.key.to_bytes(),
                 &spl_token.to_bytes(),
-                &acc_inb_mint.key.to_bytes(),
+                &inb_info.mint.to_bytes(),
                 &[inp_inb_nonce]
             ],
             &asc_token
@@ -680,7 +694,7 @@ pub mod swap_contract {
             &[
                 &acc_root.key.to_bytes(),
                 &spl_token.to_bytes(),
-                &acc_out_mint.key.to_bytes(),
+                &out_info.mint.to_bytes(),
                 &[inp_out_nonce]
             ],
             &asc_token
@@ -690,14 +704,66 @@ pub mod swap_contract {
             return Err(ErrorCode::InvalidDerivedAccount.into());
         }
 
+        if sw.oracle_rates || sw.oracle_verify {
+            let acc_orac = ctx.remaining_accounts.get(0).unwrap();
+            verify_matching_accounts(acc_orac.key, &sw.oracle_data, Some(String::from("Invalid oracle data")))?;
+        }
+
         msg!("Atellix: Tokens verified ready to swap");
-        let mut tokens_inb: u64 = inp_out_tokens;
-        let mut tokens_out: u64 = inp_out_tokens;
+        let mut tokens_inb: u64;
+        let mut tokens_out: u64 = 0;
         //let mut tokens_fee: u64 = 0;
+        
+        if sw.oracle_rates {
+            msg!("Atellix: Use oracle rates");
+            tokens_inb = inp_tokens;
+            let acc_orac = ctx.remaining_accounts.get(0).unwrap();
+            let feed_data = FastRoundResultAccountData::deserialize(&acc_orac.try_borrow_data()?).unwrap();
+            let oracle_val: f64 = feed_data.result.result;
+            msg!("Atellix: Oracle value: {}", oracle_val.to_string());
+            let adjust_u: u32 = 8;
+            let adjust_i: i32 = 8;
+            let base_u: u128 = 10;
+            let base_f: f64 = 10.0;
+            if sw.oracle_inverse {
+                msg!("Atellix: Inverse oracle rates");
+            } else {
+                let oracle_val: f64 = oracle_val * base_f.powi(adjust_i);
+                let calc_inp: u128 = tokens_inb as u128;
+                let mut calc_out: u128;
+                calc_out = calc_inp.checked_mul(oracle_val as u128).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                calc_out = calc_out.checked_div(base_u.pow(adjust_u)).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                if calc_out > u64::MAX as u128 {
+                    return Err(ErrorCode::Overflow.into());
+                }
+                tokens_out = calc_out as u64;
+            }
+            /*if sw.oracle_verify {
+            }*/
+        } else if sw.rate_swap == sw.rate_base { // Symmetrical swap
+            msg!("Atellix: Symmetrical swap");
+            tokens_inb = inp_tokens;
+            tokens_out = inp_tokens;
+        } else {
+            msg!("Atellix: Ratio swap");
+            if inp_is_buy {         // Buy order (price in outbound tokens)
+                msg!("Atellix: Buy order");
+                tokens_out = inp_tokens;
+                tokens_inb = tokens_out.checked_mul(sw.rate_swap).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                tokens_inb = tokens_inb.checked_div(sw.rate_base).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            } else {                // Sell order (price in inbound tokens)
+                msg!("Atellix: Sell order");
+                tokens_inb = inp_tokens;
+                tokens_out = tokens_inb.checked_mul(sw.rate_base).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                tokens_out = tokens_out.checked_div(sw.rate_swap).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            }
+        }
 
         inb_info.amount = inb_info.amount.checked_add(tokens_inb).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         out_info.amount = out_info.amount.checked_sub(tokens_out).ok_or(ProgramError::from(ErrorCode::Overflow))?;
 
+        msg!("Atellix: Inbound Tokens: {}", tokens_inb.to_string());
+        msg!("Atellix: Outbound Tokens: {}", tokens_out.to_string());
         msg!("Atellix: New Inbound Amount: {}", inb_info.amount.to_string());
         msg!("Atellix: New Outbound Amount: {}", out_info.amount.to_string());
 
@@ -827,14 +893,12 @@ pub struct Swap<'info> {
     pub inb_token_src: AccountInfo<'info>,
     #[account(mut)]
     pub inb_token_dst: AccountInfo<'info>,
-    pub inb_mint: AccountInfo<'info>,
     #[account(mut)]
     pub out_info: ProgramAccount<'info, TokenInfo>,
     #[account(mut)]
     pub out_token_src: AccountInfo<'info>,
     #[account(mut)]
     pub out_token_dst: AccountInfo<'info>,
-    pub out_mint: AccountInfo<'info>,
     #[account(address = token::ID)]
     pub token_program: AccountInfo<'info>,
     // Fees
@@ -853,10 +917,12 @@ pub struct SwapData {
     //pub merchant_only: bool,            // Merchant-only flag
     pub oracle_data: Pubkey,            // Oracle data address or Pubkey::default() for none
     pub oracle_rates: bool,             // Uses oracle data for swap rates
+    pub oracle_inverse: bool,           // Inverse the oracle rate
     pub oracle_verify: bool,            // Uses oracle data to check for a valid range
     pub oracle_verify_min: u64,         // Valid range minimum (times 10**6, or 6 decimals)
     pub oracle_verify_max: u64,         // Valid range maximum (times 10**6, or 6 decimals)
-    pub symmetrical_swap: bool,         // 1:1 swap for stablecoins
+    pub rate_swap: u64,                 // Swap rate
+    pub rate_base: u64,                 // Base rate
     pub inb_token_info: Pubkey,         // Token info for inbound tokens
     pub out_token_info: Pubkey,         // Token info for outbound tokens
     pub fees_inbound: bool,             // Use inbound (or alternatively outbound) token for fees
