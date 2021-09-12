@@ -14,6 +14,7 @@ const provider = anchor.Provider.env()
 anchor.setProvider(provider)
 const swapContract = anchor.workspace.SwapContract
 const swapContractPK = swapContract.programId
+const oraclePK = new PublicKey('DpoK8Zz69APV9ntjuY9C4LZCxANYMV56M2cbXEdkjxME')
 
 const SPL_ASSOCIATED_TOKEN = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
 async function associatedTokenAddress(walletAddress, tokenMintAddress) {
@@ -354,15 +355,15 @@ async function main() {
     })*/
     await swapContract.rpc.createSwap(
         rootData.nonce,
-        false,
-        false,
-        false,
-        new anchor.BN(0),
-        new anchor.BN(0),
-        new anchor.BN(20000),
-        new anchor.BN(10000),
-        false,
-        0,
+        true, // use oracle
+        false, // inverse oracle
+        false, // oracle range check
+        new anchor.BN(0), // range min
+        new anchor.BN(0), // range max
+        new anchor.BN(1), // swap rate
+        new anchor.BN(1), // base rate
+        false, // fees on inbound token
+        0, // fees basis points
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
@@ -373,6 +374,9 @@ async function main() {
                 outInfo: new PublicKey(tkiData2.pubkey),
                 feesAccount: feesAcct.publicKey,
             },
+            remainingAccounts: [
+                { pubkey: oraclePK, isWritable: false, isSigner: false },
+            ],
             signers: [swapAdmin1],
         }
     )

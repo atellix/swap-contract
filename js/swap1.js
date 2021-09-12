@@ -14,6 +14,7 @@ const provider = anchor.Provider.env()
 anchor.setProvider(provider)
 const swapContract = anchor.workspace.SwapContract
 const swapContractPK = swapContract.programId
+const oraclePK = new PublicKey('DpoK8Zz69APV9ntjuY9C4LZCxANYMV56M2cbXEdkjxME')
 
 const SPL_ASSOCIATED_TOKEN = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
 async function associatedTokenAddress(walletAddress, tokenMintAddress) {
@@ -126,7 +127,7 @@ async function main() {
         tokData1.nonce,
         tokData2.nonce,
         false, // True - Buy, False - Sell
-        new anchor.BN(999 * 10000),
+        new anchor.BN(1 * 10000),
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
@@ -142,6 +143,9 @@ async function main() {
                 tokenProgram: TOKEN_PROGRAM_ID,
                 //feesAccount: feesAcct.publicKey,
             },
+            remainingAccounts: [
+                { pubkey: oraclePK, isWritable: false, isSigner: false },
+            ],
         }
     )
 }
