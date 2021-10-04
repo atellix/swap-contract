@@ -1,5 +1,7 @@
 #!/bin/bash
 
+### FOR TESTING ONLY: Use new_swap_token.sh in net_authority/js to create internal tokens
+
 TMP=$(mktemp)
 solana-keygen new --silent --no-bip39-passphrase --force --outfile $TMP 2>&1 > /dev/null
 MINT=$(solana-keygen pubkey $TMP)

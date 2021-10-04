@@ -44,7 +44,7 @@ function importSecretKey(keyStr) {
 }
 
 async function createTokenMint() {
-    var res = await exec('/Users/mfrager/Build/solana/swap-contract/create_mint.sh')
+    var res = await exec('./create_mint.sh')
     return res.stdout
 }
 
@@ -91,7 +91,8 @@ async function main() {
 
     if (true) {
         var mint1 = await createTokenMint()
-        var mint2 = await createTokenMint()
+        //var mint2 = await createTokenMint()
+        var mint2 = '3gNsEnXEG9j4yEcSX36NWodP3gnK2gDv8g3oFkPobbmr' // USDV
         console.log("Mints: " + mint1 + " " + mint2)
         tokenMint1 = new PublicKey(mint1)
         tokenMint2 = new PublicKey(mint2)
@@ -355,7 +356,7 @@ async function main() {
     })*/
     await swapContract.rpc.createSwap(
         rootData.nonce,
-        true, // use oracle
+        false, // use oracle
         false, // inverse oracle
         false, // oracle range check
         new anchor.BN(0), // range min
@@ -374,9 +375,9 @@ async function main() {
                 outInfo: new PublicKey(tkiData2.pubkey),
                 feesAccount: feesAcct.publicKey,
             },
-            remainingAccounts: [
+            /*remainingAccounts: [
                 { pubkey: oraclePK, isWritable: false, isSigner: false },
-            ],
+            ],*/
             signers: [swapAdmin1],
         }
     )

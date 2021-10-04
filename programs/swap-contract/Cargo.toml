@@ -22,5 +22,5 @@ solana-program = "1.7.11"
 bytemuck = "1.7.2"
 num_enum = "0.5.4"
 byte-slice-cast = "1.0.0"
-slab_alloc = { version = "1.0.0", path = "/Users/mfrager/Build/solana/crates/slab-alloc" }
-decode_account = { version = "1.0.0", path = "/Users/mfrager/Build/solana/crates/decode-account" }
+slab-alloc = { version = "1.0.0", path = "/Users/mfrager/Build/solana/crates/slab-alloc" }
+decode-account = { version = "1.0.0", path = "/Users/mfrager/Build/solana/crates/decode-account" }
