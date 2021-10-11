@@ -48,10 +48,6 @@ async function createTokenMint() {
     return res.stdout
 }
 
-function sleep(millis) {
-  return new Promise(resolve => setTimeout(resolve, millis));
-}
-
 async function main() {
     var ndjs
     try {
@@ -109,59 +105,49 @@ async function main() {
     const tokData1 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint1)
     const tokData2 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint2)
 
-    console.log('Swap: ' + swapCache.swapData)
-    const userToken1 = await associatedTokenAddress(provider.wallet.publicKey, tokenMint1)
-    const userToken2 = await associatedTokenAddress(provider.wallet.publicKey, tokenMint2)
-
-    var l1 = swapContract.addEventListener('SwapEvent', (evt, slot) => {
-        console.log('Event - Slot: ' + slot)
-        console.log(evt.eventHash.toString())
-        console.log(evt)
-    })
-
-    console.log({
-        rootData: new PublicKey(rootData.pubkey).toString(),
-        authData: authDataPK.toString(),
-        swapUser: provider.wallet.publicKey.toString(),
-        swapData: swapDataPK.toString(),
-        inbInfo: new PublicKey(tkiData1.pubkey).toString(),
-        inbTokenSrc: new PublicKey(userToken1.pubkey).toString(),
-        inbTokenDst: new PublicKey(tokData1.pubkey).toString(),
-        inbMint: tokenMint1.toString(),
-        outInfo: new PublicKey(tkiData2.pubkey).toString(),
-        outTokenSrc: new PublicKey(tokData2.pubkey).toString(),
-        outTokenDst: new PublicKey(userToken2.pubkey).toString(),
-        outMint: tokenMint2.toString(),
-    })
-    await swapContract.rpc.swap(
+    /*console.log('Deposit 1: ' + tokData1.pubkey)
+    await swapContract.rpc.deposit(
         rootData.nonce,
+        tkiData1.nonce,
         tokData1.nonce,
-        tokData2.nonce,
-        false, // True - Buy, False - Sell
-        new anchor.BN(50 * 10000),
+        true,
+        new anchor.BN(0),
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
                 authData: authDataPK,
-                swapUser: provider.wallet.publicKey,
-                swapData: swapDataPK,
-                inbInfo: new PublicKey(tkiData1.pubkey),
-                inbTokenSrc: new PublicKey(userToken1.pubkey),
-                inbTokenDst: new PublicKey(tokData1.pubkey),
-                outInfo: new PublicKey(tkiData2.pubkey),
-                outTokenSrc: new PublicKey(tokData2.pubkey),
-                outTokenDst: new PublicKey(userToken2.pubkey),
+                swapAdmin: swapDeposit1.publicKey,
+                swapToken: new PublicKey(tokData1.pubkey),
+                tokenAdmin: provider.wallet.publicKey,
+                tokenMint: tokenMint1,
+                tokenInfo: new PublicKey(tkiData1.pubkey),
                 tokenProgram: TOKEN_PROGRAM_ID,
-                //feesAccount: feesAcct.publicKey,
             },
-            remainingAccounts: [
-                { pubkey: oraclePK, isWritable: false, isSigner: false },
-            ],
+            signers: [swapDeposit1],
+        }
+    )*/
+
+    console.log('Deposit 2: ' + tokData2.pubkey)
+    await swapContract.rpc.deposit(
+        rootData.nonce,
+        tkiData2.nonce,
+        tokData2.nonce,
+        true,
+        new anchor.BN(10000000000),
+        {
+            accounts: {
+                rootData: new PublicKey(rootData.pubkey),
+                authData: authDataPK,
+                swapAdmin: swapDeposit1.publicKey,
+                swapToken: new PublicKey(tokData2.pubkey),
+                tokenAdmin: provider.wallet.publicKey,
+                tokenMint: tokenMint2,
+                tokenInfo: new PublicKey(tkiData2.pubkey),
+                tokenProgram: TOKEN_PROGRAM_ID,
+            },
+            signers: [swapDeposit1],
         }
     )
-
-    await sleep(2000)
-    await swapContract.removeEventListener(l1)
 }
 
 console.log('Begin')

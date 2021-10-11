@@ -89,10 +89,10 @@ async function main() {
     var swapDeposit1
     var swapWithdraw1
 
-    if (true) {
-        var mint1 = await createTokenMint()
-        //var mint2 = await createTokenMint()
-        var mint2 = '3gNsEnXEG9j4yEcSX36NWodP3gnK2gDv8g3oFkPobbmr' // USDV
+    if (false) {
+        //var mintX = await createTokenMint()
+        var mint1 = '6MBodtA49RtjxnuorEFXrGVqf1R8cHTurLZByzdsn37e' // USDC
+        var mint2 = 'HZE3aet4kKEnBdKsTAWcc9Axv6F7p9Yu4rcNJcuxddZr' // USDV
         console.log("Mints: " + mint1 + " " + mint2)
         tokenMint1 = new PublicKey(mint1)
         tokenMint2 = new PublicKey(mint2)
@@ -218,7 +218,7 @@ async function main() {
         swapWithdraw1 = importSecretKey(swapCache.swapWithdraw1_secret)
     }
 
-    if (true) {
+    if (false) {
         console.log('Fund Swap Deposit Admin')
         var tx = new anchor.web3.Transaction()
         tx.add(
@@ -292,7 +292,7 @@ async function main() {
         tkiData1.nonce,
         tokData1.nonce,
         true,
-        new anchor.BN(1000000000000000),
+        new anchor.BN(0),
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
@@ -314,7 +314,7 @@ async function main() {
         tkiData2.nonce,
         tokData2.nonce,
         true,
-        new anchor.BN(1000000000000000),
+        new anchor.BN(0),
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),

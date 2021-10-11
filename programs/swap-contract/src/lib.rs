@@ -19,6 +19,8 @@ use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, Slab
 extern crate decode_account;
 use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgradeableLoaderAccountType };
 
+declare_id!("GDB2SfRF7djZrBnTnG6r78R2L9psrTkMjWUkoQxXkAbR");
+
 pub const MAX_RBAC: u32 = 1024;
 
 #[repr(u16)]
@@ -820,6 +822,21 @@ pub mod swap_contract {
         let out_ctx = CpiContext::new_with_signer(cpi_prog2, out_accounts, out_signer);
         token::transfer(out_ctx, tokens_out)?;
 
+        emit!(SwapEvent {
+            event_hash: 144834217477609949185867766428666600068, // "solana/program/atx-swap-contract/swap" (MurmurHash3 128-bit unsigned)
+            swap_data: ctx.accounts.swap_data.key(),
+            user: ctx.accounts.swap_user.key(),
+            inb_mint: inb_info.mint,
+            inb_tokens: tokens_inb,
+            inb_token_src: ctx.accounts.inb_token_src.key(),
+            out_mint: out_info.mint,
+            out_tokens: tokens_out,
+            out_token_dst: ctx.accounts.out_token_dst.key(),
+            //fee_mint: Pubkey,
+            //fee_tokens: u64,
+            //fee_account: Pubkey,
+        });
+
         Ok(())
     }
 
@@ -989,6 +1006,25 @@ impl Default for RootData {
             root_authority: Pubkey::default(),
         }
     }
+}
+
+#[event]
+pub struct SwapEvent {
+    pub event_hash: u128,
+    pub swap_data: Pubkey,
+    pub user: Pubkey,
+    pub inb_mint: Pubkey,
+    pub inb_tokens: u64,
+    pub inb_token_src: Pubkey,
+    pub out_mint: Pubkey,
+    pub out_tokens: u64,
+    pub out_token_dst: Pubkey,
+    //pub fee_mint: Pubkey,
+    //pub fee_tokens: u64,
+    //pub fee_account: Pubkey,
+    //pub use_oracle: bool,
+    //pub oracle: Pubkey,
+    //pub oracle_val: u128,
 }
 
 #[error]
