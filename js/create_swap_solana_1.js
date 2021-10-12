@@ -59,10 +59,15 @@ async function main() {
 
     const rootData = await programAddress([swapContractPK.toBuffer()])
 
-    const tkiBytes = swapContract.account.tokenInfo.size
-    const tkiRent = await provider.connection.getMinimumBalanceForRentExemption(tkiBytes)
+    const feesAcct = anchor.web3.Keypair.generate()
 
-    var tokenMint = new PublicKey('6MBodtA49RtjxnuorEFXrGVqf1R8cHTurLZByzdsn37e')
+    const swapBytes = swapContract.account.swapData.size
+    const swapRent = await provider.connection.getMinimumBalanceForRentExemption(swapBytes)
+
+    var swapData
+    var swapDataPK
+
+    var tokenMint = new PublicKey('HZE3aet4kKEnBdKsTAWcc9Axv6F7p9Yu4rcNJcuxddZr')
     var authData
     var authDataPK
     var swapAdmin1
@@ -81,31 +86,75 @@ async function main() {
     swapDeposit1 = importSecretKey(swapCache.swapDeposit1_secret)
     swapWithdraw1 = importSecretKey(swapCache.swapWithdraw1_secret)
 
-    const tkiData = await programAddress([tokenMint.toBuffer()])
-    const tokData = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint)
+    var writeData = {}
 
-    console.log('Deposit: ' + tokData.pubkey)
-    let res = await swapContract.rpc.deposit(
+    var mint1 = 'So11111111111111111111111111111111111111112' // USDC
+    var mint2 = 'HZE3aet4kKEnBdKsTAWcc9Axv6F7p9Yu4rcNJcuxddZr' // USDV
+    console.log("Mints: " + mint1 + " " + mint2)
+    tokenMint1 = new PublicKey(mint1)
+    tokenMint2 = new PublicKey(mint2)
+    writeData['tokenMint1'] = tokenMint1.toString()
+    writeData['tokenMint2'] = tokenMint2.toString()
+    
+    const tkiData1 = await programAddress([tokenMint1.toBuffer()])
+    const tkiData2 = await programAddress([tokenMint2.toBuffer()])
+    const tokData1 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint1)
+    const tokData2 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint2)
+
+    swapData = anchor.web3.Keypair.generate()
+    swapDataPK = swapData.publicKey
+    writeData['swapData'] = swapData.publicKey.toString()
+    writeData['feesAccount'] = feesAcct.publicKey.toString()
+
+    console.log('Create Swap')
+
+    if (true) {
+        const tx = new anchor.web3.Transaction()
+        tx.add(
+            anchor.web3.SystemProgram.createAccount({
+                fromPubkey: provider.wallet.publicKey,
+                newAccountPubkey: swapDataPK,
+                space: swapBytes,
+                lamports: swapRent,
+                programId: swapContractPK,
+            })
+        )
+        await provider.send(tx, [swapData])
+    }
+
+    let res = await swapContract.rpc.createSwap(
         rootData.nonce,
-        tkiData.nonce,
-        tokData.nonce,
-        true,
-        new anchor.BN(1000000 * 10**4),
+        true, // use oracle
+        false, // inverse oracle
+        false, // oracle range check
+        new anchor.BN(0), // range min
+        new anchor.BN(0), // range max
+        new anchor.BN(10 ** 9), // swap rate
+        new anchor.BN(10 ** 9), // base rate
+        false, // fees on inbound token
+        0, // fees basis points
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
                 authData: authDataPK,
-                swapAdmin: swapDeposit1.publicKey,
-                swapToken: new PublicKey(tokData.pubkey),
-                tokenAdmin: provider.wallet.publicKey,
-                tokenMint: tokenMint,
-                tokenInfo: new PublicKey(tkiData.pubkey),
-                tokenProgram: TOKEN_PROGRAM_ID,
+                swapAdmin: swapAdmin1.publicKey,
+                swapData: swapDataPK,
+                inbInfo: new PublicKey(tkiData1.pubkey),
+                outInfo: new PublicKey(tkiData2.pubkey),
+                feesAccount: feesAcct.publicKey,
             },
-            signers: [swapDeposit1],
+            remainingAccounts: [
+                { pubkey: oraclePK, isWritable: false, isSigner: false },
+            ],
+            signers: [swapAdmin1],
         }
     )
     console.log(res)
+    try {
+        await fs.writeFile('data-' + swapDataPK.toString().substring(0, 8) + '.json', JSON.stringify(writeData, null, 4))
+    } catch (error) {
+        console.log("File Error: " + error)
+    }
 }
 
 console.log('Begin')

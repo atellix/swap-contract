@@ -62,7 +62,7 @@ async function main() {
     const tkiBytes = swapContract.account.tokenInfo.size
     const tkiRent = await provider.connection.getMinimumBalanceForRentExemption(tkiBytes)
 
-    var tokenMint = new PublicKey('6MBodtA49RtjxnuorEFXrGVqf1R8cHTurLZByzdsn37e')
+    var tokenMint = new PublicKey('HZE3aet4kKEnBdKsTAWcc9Axv6F7p9Yu4rcNJcuxddZr')
     var authData
     var authDataPK
     var swapAdmin1

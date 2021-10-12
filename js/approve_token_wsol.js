@@ -14,7 +14,6 @@ const provider = anchor.Provider.env()
 anchor.setProvider(provider)
 const swapContract = anchor.workspace.SwapContract
 const swapContractPK = swapContract.programId
-const oraclePK = new PublicKey('DpoK8Zz69APV9ntjuY9C4LZCxANYMV56M2cbXEdkjxME')
 
 const SPL_ASSOCIATED_TOKEN = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
 async function associatedTokenAddress(walletAddress, tokenMintAddress) {
@@ -62,7 +61,8 @@ async function main() {
     const tkiBytes = swapContract.account.tokenInfo.size
     const tkiRent = await provider.connection.getMinimumBalanceForRentExemption(tkiBytes)
 
-    var tokenMint = new PublicKey('6MBodtA49RtjxnuorEFXrGVqf1R8cHTurLZByzdsn37e')
+    var tokenMint = new PublicKey('So11111111111111111111111111111111111111112')
+    var tokenDecimals = 9
     var authData
     var authDataPK
     var swapAdmin1
@@ -84,28 +84,43 @@ async function main() {
     const tkiData = await programAddress([tokenMint.toBuffer()])
     const tokData = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint)
 
-    console.log('Deposit: ' + tokData.pubkey)
-    let res = await swapContract.rpc.deposit(
+    if (true) {
+        console.log('Fund Swap Admin')
+        var tx = new anchor.web3.Transaction()
+        tx.add(
+            anchor.web3.SystemProgram.transfer({
+                fromPubkey: provider.wallet.publicKey,
+                toPubkey: swapAdmin1.publicKey,
+                lamports: tkiRent + await provider.connection.getMinimumBalanceForRentExemption(165),
+            })
+        )
+        await provider.send(tx)
+    }
+
+    console.log('Approve Token: ' + tokenMint.toString())
+    await swapContract.rpc.approveToken(
         rootData.nonce,
         tkiData.nonce,
         tokData.nonce,
-        true,
-        new anchor.BN(1000000 * 10**4),
+        new anchor.BN(tkiRent),
+        new anchor.BN(tkiBytes),
+        tokenDecimals,
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
                 authData: authDataPK,
-                swapAdmin: swapDeposit1.publicKey,
+                swapAdmin: swapAdmin1.publicKey,
                 swapToken: new PublicKey(tokData.pubkey),
-                tokenAdmin: provider.wallet.publicKey,
                 tokenMint: tokenMint,
                 tokenInfo: new PublicKey(tkiData.pubkey),
                 tokenProgram: TOKEN_PROGRAM_ID,
+                ascProgram: SPL_ASSOCIATED_TOKEN,
+                systemProgram: SystemProgram.programId,
+                systemRent: SYSVAR_RENT_PUBKEY,
             },
-            signers: [swapDeposit1],
+            signers: [swapAdmin1],
         }
     )
-    console.log(res)
 }
 
 console.log('Begin')
