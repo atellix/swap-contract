@@ -6,3 +6,4 @@ js/node_modules/*
 *.swp
 *.swo
 js/swap.json
+js/data-*.json
