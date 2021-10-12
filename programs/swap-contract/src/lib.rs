@@ -411,9 +411,9 @@ pub mod swap_contract {
         verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
         verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
 
-        let admin_role = has_role(&acc_auth, Role::SwapDeposit, acc_admn.key);
+        let admin_role = has_role(&acc_auth, Role::SwapAdmin, acc_admn.key);
         if admin_role.is_err() {
-            msg!("No swap deposit role");
+            msg!("No swap admin role");
             return Err(ErrorCode::AccessDenied.into());
         }
 
@@ -496,6 +496,7 @@ pub mod swap_contract {
             mint: *acc_mint.key,
             decimals: inp_decimals,
             amount: 0,
+            token_tx_count: 0,
         };
         let mut tk_data = acc_info.try_borrow_mut_data()?;
         let tk_dst: &mut [u8] = &mut tk_data;
@@ -561,6 +562,7 @@ pub mod swap_contract {
             fees_inbound: inp_fees_inbound,
             fees_account: Pubkey::default(),
             fees_bps: inp_fees_bps,
+            swap_tx_count: 0,
         };
         let mut sw_data = acc_swap.try_borrow_mut_data()?;
         let sw_dst: &mut [u8] = &mut sw_data;
@@ -633,6 +635,8 @@ pub mod swap_contract {
         }
 
         ctx.accounts.token_info.amount = ctx.accounts.token_info.amount.checked_add(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        ctx.accounts.token_info.token_tx_count = ctx.accounts.token_info.token_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        // TODO: Logging
         msg!("Atellix: New token amount: {}", ctx.accounts.token_info.amount.to_string());
 
         Ok(())
@@ -664,6 +668,10 @@ pub mod swap_contract {
         let acc_inb = &ctx.accounts.inb_info.to_account_info();
         let acc_out = &ctx.accounts.out_info.to_account_info();
         let sw = &ctx.accounts.swap_data;
+        if ! sw.active {
+            msg!("Inactive swap");
+            return Err(ErrorCode::AccessDenied.into());
+        }
         verify_matching_accounts(&sw.inb_token_info, acc_inb.key, Some(String::from("Invalid inbound token info")))?;
         verify_matching_accounts(&sw.out_token_info, acc_out.key, Some(String::from("Invalid outbound token info")))?;
         let inb_info = &mut ctx.accounts.inb_info;
@@ -822,6 +830,10 @@ pub mod swap_contract {
         let out_ctx = CpiContext::new_with_signer(cpi_prog2, out_accounts, out_signer);
         token::transfer(out_ctx, tokens_out)?;
 
+        inb_info.token_tx_count = inb_info.token_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        out_info.token_tx_count = out_info.token_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        ctx.accounts.swap_data.swap_tx_count = ctx.accounts.swap_data.swap_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+
         emit!(SwapEvent {
             event_hash: 144834217477609949185867766428666600068, // "solana/program/atx-swap-contract/swap" (MurmurHash3 128-bit unsigned)
             swap_data: ctx.accounts.swap_data.key(),
@@ -835,6 +847,9 @@ pub mod swap_contract {
             //fee_mint: Pubkey,
             //fee_tokens: u64,
             //fee_account: Pubkey,
+            swap_tx: ctx.accounts.swap_data.swap_tx_count,
+            inb_token_tx: ctx.accounts.inb_info.token_tx_count,
+            out_token_tx: ctx.accounts.out_info.token_tx_count,
         });
 
         Ok(())
@@ -975,6 +990,7 @@ pub struct SwapData {
     pub fees_inbound: bool,             // Use inbound (or alternatively outbound) token for fees
     pub fees_account: Pubkey,           // Fees account
     pub fees_bps: u32,                  // Swap fees in basis points
+    pub swap_tx_count: u64,             // Transaction ID sequence for swap
 }
 
 #[account]
@@ -982,6 +998,7 @@ pub struct TokenInfo {
     pub mint: Pubkey,
     pub decimals: u8,
     pub amount: u64,
+    pub token_tx_count: u64,
 }
 
 #[account]
@@ -1025,6 +1042,9 @@ pub struct SwapEvent {
     //pub use_oracle: bool,
     //pub oracle: Pubkey,
     //pub oracle_val: u128,
+    pub swap_tx: u64,
+    pub inb_token_tx: u64,
+    pub out_token_tx: u64,
 }
 
 #[error]
