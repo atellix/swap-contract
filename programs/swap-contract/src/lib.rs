@@ -799,11 +799,13 @@ pub mod swap_contract {
             }
         }
 
+        msg!("Atellix: Inbound Tokens: {}", tokens_inb.to_string());
+        msg!("Atellix: Outbound Tokens: {}", tokens_out.to_string());
+
+        msg!("Atellix: Available Outbound Tokens: {}", out_info.amount.to_string());
         inb_info.amount = inb_info.amount.checked_add(tokens_inb).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         out_info.amount = out_info.amount.checked_sub(tokens_out).ok_or(ProgramError::from(ErrorCode::Overflow))?;
 
-        msg!("Atellix: Inbound Tokens: {}", tokens_inb.to_string());
-        msg!("Atellix: Outbound Tokens: {}", tokens_out.to_string());
         msg!("Atellix: New Inbound Amount: {}", inb_info.amount.to_string());
         msg!("Atellix: New Outbound Amount: {}", out_info.amount.to_string());
 
@@ -814,6 +816,7 @@ pub mod swap_contract {
         };
         let cpi_prog1 = ctx.accounts.token_program.clone();
         let in_ctx = CpiContext::new(cpi_prog1, in_accounts);
+        msg!("Atellix: Attempt Inbound Transfer");
         token::transfer(in_ctx, tokens_inb)?;
 
         let out_seeds = &[
@@ -828,6 +831,7 @@ pub mod swap_contract {
         };
         let cpi_prog2 = ctx.accounts.token_program.clone();
         let out_ctx = CpiContext::new_with_signer(cpi_prog2, out_accounts, out_signer);
+        msg!("Atellix: Attempt Outbound Transfer");
         token::transfer(out_ctx, tokens_out)?;
 
         inb_info.token_tx_count = inb_info.token_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;

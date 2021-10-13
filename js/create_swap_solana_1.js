@@ -130,7 +130,7 @@ async function main() {
         new anchor.BN(0), // range min
         new anchor.BN(0), // range max
         new anchor.BN(10 ** 9), // swap rate
-        new anchor.BN(10 ** 9), // base rate
+        new anchor.BN(10 ** 4), // base rate
         false, // fees on inbound token
         0, // fees basis points
         {
