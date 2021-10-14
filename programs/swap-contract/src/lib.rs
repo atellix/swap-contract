@@ -563,6 +563,8 @@ pub mod swap_contract {
             fees_account: Pubkey::default(),
             fees_bps: inp_fees_bps,
             swap_tx_count: 0,
+            swap_inb_tokens: 0,
+            swap_out_tokens: 0,
         };
         let mut sw_data = acc_swap.try_borrow_mut_data()?;
         let sw_dst: &mut [u8] = &mut sw_data;
@@ -636,6 +638,7 @@ pub mod swap_contract {
 
         ctx.accounts.token_info.amount = ctx.accounts.token_info.amount.checked_add(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         ctx.accounts.token_info.token_tx_count = ctx.accounts.token_info.token_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+
         // TODO: Logging
         msg!("Atellix: New token amount: {}", ctx.accounts.token_info.amount.to_string());
 
@@ -837,6 +840,8 @@ pub mod swap_contract {
         inb_info.token_tx_count = inb_info.token_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         out_info.token_tx_count = out_info.token_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         ctx.accounts.swap_data.swap_tx_count = ctx.accounts.swap_data.swap_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        ctx.accounts.swap_data.swap_inb_tokens = ctx.accounts.swap_data.swap_inb_tokens.checked_add(tokens_inb).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        ctx.accounts.swap_data.swap_out_tokens = ctx.accounts.swap_data.swap_out_tokens.checked_add(tokens_out).ok_or(ProgramError::from(ErrorCode::Overflow))?;
 
         emit!(SwapEvent {
             event_hash: 144834217477609949185867766428666600068, // "solana/program/atx-swap-contract/swap" (MurmurHash3 128-bit unsigned)
@@ -851,6 +856,8 @@ pub mod swap_contract {
             //fee_mint: Pubkey,
             //fee_tokens: u64,
             //fee_account: Pubkey,
+            swap_inb_tokens: ctx.accounts.swap_data.swap_inb_tokens,
+            swap_out_tokens: ctx.accounts.swap_data.swap_out_tokens,
             swap_tx: ctx.accounts.swap_data.swap_tx_count,
             inb_token_tx: ctx.accounts.inb_info.token_tx_count,
             out_token_tx: ctx.accounts.out_info.token_tx_count,
@@ -995,6 +1002,8 @@ pub struct SwapData {
     pub fees_account: Pubkey,           // Fees account
     pub fees_bps: u32,                  // Swap fees in basis points
     pub swap_tx_count: u64,             // Transaction ID sequence for swap
+    pub swap_inb_tokens: u64,           // Total tokens inbound, net of deposits/withdrawals
+    pub swap_out_tokens: u64,           // Total tokens outbound, net of deposits/withdrawals
 }
 
 #[account]
@@ -1046,6 +1055,8 @@ pub struct SwapEvent {
     //pub use_oracle: bool,
     //pub oracle: Pubkey,
     //pub oracle_val: u128,
+    pub swap_out_tokens: u64,
+    pub swap_inb_tokens: u64,
     pub swap_tx: u64,
     pub inb_token_tx: u64,
     pub out_token_tx: u64,
