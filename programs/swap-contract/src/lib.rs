@@ -959,6 +959,7 @@ pub struct Swap<'info> {
     pub auth_data: AccountInfo<'info>,
     #[account(signer)]
     pub swap_user: AccountInfo<'info>,
+    #[account(mut)]
     pub swap_data: ProgramAccount<'info, SwapData>,
     #[account(mut)]
     pub inb_info: ProgramAccount<'info, TokenInfo>,
