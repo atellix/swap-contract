@@ -85,11 +85,10 @@ async function main() {
     const tokData = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint)
 
     console.log('Deposit: ' + tokData.pubkey)
-    let res = await swapContract.rpc.deposit(
+    let res = await swapContract.rpc.mintDeposit(
         rootData.nonce,
         tkiData.nonce,
         tokData.nonce,
-        true,
         new anchor.BN(1000000 * 10**4),
         {
             accounts: {
