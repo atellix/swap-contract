@@ -1,7 +1,7 @@
 use std::{ io::Cursor, string::String, str::FromStr, result::Result as FnResult };
 use bytemuck::{ Pod, Zeroable };
 use byte_slice_cast::*;
-use num_enum::TryFromPrimitive;
+use num_enum::{ TryFromPrimitive, IntoPrimitive };
 use switchboard_program;
 use switchboard_program::{ FastRoundResultAccountData };
 use anchor_lang::prelude::*;
@@ -24,6 +24,13 @@ declare_id!("9RVS4RCT4bed1US9YudFZv9syKkfxfXg4odyV3kZLyjt");
 
 pub const MAX_RBAC: u32 = 1024;
 
+#[repr(u8)]
+#[derive(PartialEq, Debug, Eq, Copy, Clone, TryFromPrimitive, IntoPrimitive)]
+pub enum OracleType {
+    NoOracle,
+    Switchboard,
+}
+
 #[repr(u16)]
 #[derive(PartialEq, Debug, Eq, Copy, Clone)]
 pub enum DT { // Data types
@@ -39,6 +46,7 @@ pub enum Role {             // Role-based access control:
     SwapDeposit,            // Can deposit to swap contracts
     SwapWithdraw,           // Can withdraw from swap contracts
     SwapFees,               // Can receive fees from swaps
+    NetAuthority,           // Valid network authority for merchant approvals
 }
 
 #[derive(Copy, Clone)]
@@ -523,6 +531,7 @@ pub mod swap_contract {
         inp_oracle_rates: bool,     // Use oracle for swap rates
         inp_oracle_inverse: bool,   // Inverse the oracle for "Buy" orders
         inp_oracle_verify: bool,    // Use oracle to verify price range (to check peg stability on stablecoins)
+        inp_oracle_type: u8,        // Use oracle type
         inp_verify_min: u64,        // Minimum of price range (0 for unused)
         inp_verify_max: u64,        // Maximum of price range (0 for unused)
         inp_swap_rate: u64,         // Swap rate
@@ -554,17 +563,20 @@ pub mod swap_contract {
             return Err(ErrorCode::InvalidParameters.into());
         }
 
+        OracleType::try_from(inp_oracle_type);
         let mut oracle: Pubkey = Pubkey::default();
         if inp_oracle_rates || inp_oracle_verify {
             let acc_orac = ctx.remaining_accounts.get(0).unwrap();
             oracle = *acc_orac.key;
         }
+
         let clock = Clock::get()?;
         let sw = SwapData {
             active: true,
             slot: clock.slot,
             merchant_only: false,
             oracle_data: oracle,
+            oracle_type: inp_oracle_type,
             oracle_rates: inp_oracle_rates,
             oracle_inverse: inp_oracle_inverse,
             oracle_verify: inp_oracle_verify,
@@ -922,8 +934,15 @@ pub mod swap_contract {
             msg!("Atellix: Use oracle rates");
             tokens_inb = inp_tokens;
             let acc_orac = ctx.remaining_accounts.get(0).unwrap();
-            let feed_data = FastRoundResultAccountData::deserialize(&acc_orac.try_borrow_data()?).unwrap();
-            let oracle_val: f64 = feed_data.result.result;
+            let oracle_type = OracleType::try_from(sw.oracle_type);
+            let oracle_val: f64;
+            if oracle_type == OracleType::Switchboard {
+                let feed_data = FastRoundResultAccountData::deserialize(&acc_orac.try_borrow_data()?).unwrap();
+                oracle_val = feed_data.result.result;
+            } else {
+                msg!("Invalid oracle type");
+                return Err(ErrorCode::InternalError.into());
+            }
             msg!("Atellix: Oracle value: {}", oracle_val.to_string());
             let adjust_u: u32 = 8;
             let adjust_i: i32 = 8;
@@ -1217,6 +1236,7 @@ pub struct SwapData {
     pub slot: u64,                      // Last slot updated
     pub merchant_only: bool,            // Merchant-only flag
     pub oracle_data: Pubkey,            // Oracle data address or Pubkey::default() for none
+    pub oracle_type: u8,                // Oracle data type
     pub oracle_rates: bool,             // Uses oracle data for swap rates
     pub oracle_inverse: bool,           // Inverse the oracle rate
     pub oracle_verify: bool,            // Uses oracle data to check for a valid range
@@ -1248,7 +1268,6 @@ pub struct TokenInfo {
 #[account]
 pub struct RootData {
     pub root_authority: Pubkey,
-    //pub net_authority: Pubkey, // Used to verify merchant approvals
 }
 
 impl RootData {
