@@ -1,4 +1,4 @@
-use std::{ io::Cursor, string::String, str::FromStr, result::Result as FnResult };
+use std::{ io::Cursor, string::String, str::FromStr, result::Result as FnResult, convert::TryFrom };
 use bytemuck::{ Pod, Zeroable };
 use byte_slice_cast::*;
 use num_enum::{ TryFromPrimitive, IntoPrimitive };
@@ -563,7 +563,10 @@ pub mod swap_contract {
             return Err(ErrorCode::InvalidParameters.into());
         }
 
-        OracleType::try_from(inp_oracle_type);
+        OracleType::try_from(inp_oracle_type).map_err(|_| {
+            msg!("Invalid oracle type");
+            ErrorCode::InvalidParameters
+        })?;
         let mut oracle: Pubkey = Pubkey::default();
         if inp_oracle_rates || inp_oracle_verify {
             let acc_orac = ctx.remaining_accounts.get(0).unwrap();
@@ -589,7 +592,7 @@ pub mod swap_contract {
             out_token_info: *acc_out.key,
             out_token_tx: 0,
             fees_inbound: inp_fees_inbound,
-            fees_account: Pubkey::default(),
+            fees_token: *ctx.accounts.fees_token.to_account_info().key,
             fees_bps: inp_fees_bps,
             swap_tx_count: 0,
             swap_inb_tokens: 0,
@@ -863,6 +866,10 @@ pub mod swap_contract {
 
         // TODO: verify merchants with net authority if needed
 
+        // Verify fees token
+        verify_matching_accounts(&sw.fees_token, ctx.accounts.fees_token.to_account_info().key, Some(String::from("Invalid fees token")))?;
+
+        // Verify swap token info
         let acc_inb = &ctx.accounts.inb_info.to_account_info();
         let acc_out = &ctx.accounts.out_info.to_account_info();
         let sw = &ctx.accounts.swap_data;
@@ -928,13 +935,12 @@ pub mod swap_contract {
         msg!("Atellix: Tokens verified ready to swap");
         let mut tokens_inb: u64;
         let mut tokens_out: u64;
-        //let mut tokens_fee: u64 = 0;
         
         if sw.oracle_rates {
             msg!("Atellix: Use oracle rates");
             tokens_inb = inp_tokens;
             let acc_orac = ctx.remaining_accounts.get(0).unwrap();
-            let oracle_type = OracleType::try_from(sw.oracle_type);
+            let oracle_type = OracleType::try_from(sw.oracle_type).unwrap();
             let oracle_val: f64;
             if oracle_type == OracleType::Switchboard {
                 let feed_data = FastRoundResultAccountData::deserialize(&acc_orac.try_borrow_data()?).unwrap();
@@ -1010,12 +1016,39 @@ pub mod swap_contract {
             }
         }
 
+        // Calculate fees
+        let mut fees_net: u64 = 0;
+        if sw.fees_bps > 0 {
+            let fees_input: u64;
+            if sw.fees_inbound {
+                fees_input = tokens_inb;
+            } else {
+                fees_input = tokens_out;
+            }
+            fees_net = fees_input.checked_mul(sw.fees_bps).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            fees_net = fees_net.checked_div(10000).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            msg!("Atellix: Fees Net: {}", fees_net.to_string());
+            if inp_is_buy {
+                tokens_inb = tokens_inb.checked_add(fees_net).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            } else {
+                tokens_out = tokens_out.checked_sub(fees_net).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            }
+        }
+
         msg!("Atellix: Inbound Tokens: {}", tokens_inb.to_string());
         msg!("Atellix: Outbound Tokens: {}", tokens_out.to_string());
+        if sw.fees_inbound {
+            msg!("Atellix: Fees Inbound Tokens: {}", fees_net.to_string());
+        } else {
+            msg!("Atellix: Fees Outbound Tokens: {}", fees_net.to_string());
+        }
 
         msg!("Atellix: Available Outbound Tokens: {}", out_info.amount.to_string());
         inb_info.amount = inb_info.amount.checked_add(tokens_inb).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         out_info.amount = out_info.amount.checked_sub(tokens_out).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        if ! sw.fees_inbound {
+            out_info.amount = out_info.amount.checked_sub(fees_net).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        }
 
         msg!("Atellix: New Inbound Amount: {}", inb_info.amount.to_string());
         msg!("Atellix: New Outbound Amount: {}", out_info.amount.to_string());
@@ -1045,6 +1078,40 @@ pub mod swap_contract {
         msg!("Atellix: Attempt Outbound Transfer");
         token::transfer(out_ctx, tokens_out)?;
 
+        if fees_net > 0 {
+            if sw.fees_inbound {
+                let fees_seeds = &[
+                    ctx.program_id.as_ref(),
+                    &[inp_root_nonce],
+                ];
+                let fees_signer = &[&fees_seeds[..]];
+                let fees_accounts = Transfer {
+                    from: acc_inb_token_dst,
+                    to: ctx.accounts.fees_account.to_account_info(),
+                    authority: ctx.accounts.root_data.to_account_info(),
+                };
+                let cpi_prog = ctx.accounts.token_program.clone();
+                let fees_ctx = CpiContext::new_with_signer(cpi_prog, fees_accounts, fees_signer);
+                msg!("Atellix: Attempt Fees Transfer - Inbound Token");
+                token::transfer(fees_ctx, fees_net)?;
+            } else {
+                let fees_seeds = &[
+                    ctx.program_id.as_ref(),
+                    &[inp_root_nonce],
+                ];
+                let fees_signer = &[&fees_seeds[..]];
+                let fees_accounts = Transfer {
+                    from: acc_out_token_src,
+                    to: ctx.accounts.fees_account.to_account_info(),
+                    authority: ctx.accounts.root_data.to_account_info(),
+                };
+                let cpi_prog = ctx.accounts.token_program.clone();
+                let fees_ctx = CpiContext::new_with_signer(cpi_prog, fees_accounts, fees_signer);
+                msg!("Atellix: Attempt Fees Transfer - Outbound Token");
+                token::transfer(fees_ctx, fees_net)?;
+            }
+        }
+
         let clock = Clock::get()?;
         inb_info.token_tx_count = inb_info.token_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         out_info.token_tx_count = out_info.token_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
@@ -1068,9 +1135,9 @@ pub mod swap_contract {
             out_mint: out_info.mint,
             out_tokens: tokens_out,
             out_token_dst: ctx.accounts.out_token_dst.key(),
-            fee_mint: Pubkey::default(),
-            fee_tokens: 0,
-            fee_account: Pubkey::default(),
+            fees_mint: if (ctx.accounts.swap_data.fees_inbound) { inb_info.mint } else { out_info.mint },
+            fees_amount: fees_net,
+            fees_token: ctx.accounts.swap_data.fees_token,
             use_oracle: oracle_log_inuse,
             oracle: oracle_log_key,
             oracle_val: oracle_log_val,
@@ -1223,11 +1290,10 @@ pub struct Swap<'info> {
     pub out_token_src: AccountInfo<'info>,
     #[account(mut)]
     pub out_token_dst: AccountInfo<'info>,
+    #[account(mut)]
+    pub fees_token: AccountInfo<'info>,
     #[account(address = token::ID)]
     pub token_program: AccountInfo<'info>,
-    // Fees
-    // Oracle
-    // Merchant approval
 }
 
 #[account]
@@ -1249,8 +1315,9 @@ pub struct SwapData {
     pub out_token_info: Pubkey,         // Token info for outbound tokens
     pub out_token_tx: u64,              // Last transaction id for token
     pub fees_inbound: bool,             // Use inbound (or alternatively outbound) token for fees
-    pub fees_account: Pubkey,           // Fees account
+    pub fees_token: Pubkey,             // Fees account
     pub fees_bps: u32,                  // Swap fees in basis points
+    pub fees_total: u64,                // All swap fees charged
     pub swap_tx_count: u64,             // Transaction ID sequence for swap
     pub swap_inb_tokens: u64,           // Total tokens inbound, net of deposits/withdrawals
     pub swap_out_tokens: u64,           // Total tokens outbound, net of deposits/withdrawals
@@ -1300,9 +1367,9 @@ pub struct SwapEvent {
     pub out_mint: Pubkey,
     pub out_tokens: u64,
     pub out_token_dst: Pubkey,
-    pub fee_mint: Pubkey,
-    pub fee_tokens: u64,
-    pub fee_account: Pubkey,
+    pub fees_mint: Pubkey,
+    pub fees_amount: u64,
+    pub fees_token: Pubkey,
     pub use_oracle: bool,
     pub oracle: Pubkey,
     pub oracle_val: u128,
