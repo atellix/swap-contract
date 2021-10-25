@@ -20,7 +20,7 @@ use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, Slab
 extern crate decode_account;
 use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgradeableLoaderAccountType };
 
-declare_id!("9RVS4RCT4bed1US9YudFZv9syKkfxfXg4odyV3kZLyjt");
+declare_id!("DwbLz6LCb7qKeojVWo86Ygudjw6KghEVGxn4jZiVJWkr");
 
 pub const MAX_RBAC: u32 = 1024;
 
@@ -206,6 +206,8 @@ fn verify_program_owner(program_id: &Pubkey, acc_prog: &AccountInfo, acc_pdat: &
     };
     if acc_user.key.to_string() != program_owner {
         msg!("Root admin is not program owner");
+        msg!("Expected: {}", program_owner);
+        msg!("Received: {}", acc_user.key.to_string());
         return Err(ErrorCode::AccessDenied.into());
     }
     //msg!("Verified program owner");
@@ -594,6 +596,7 @@ pub mod swap_contract {
             fees_inbound: inp_fees_inbound,
             fees_token: *ctx.accounts.fees_token.to_account_info().key,
             fees_bps: inp_fees_bps,
+            fees_total: 0,
             swap_tx_count: 0,
             swap_inb_tokens: 0,
             swap_out_tokens: 0,
@@ -866,17 +869,16 @@ pub mod swap_contract {
 
         // TODO: verify merchants with net authority if needed
 
-        // Verify fees token
-        verify_matching_accounts(&sw.fees_token, ctx.accounts.fees_token.to_account_info().key, Some(String::from("Invalid fees token")))?;
-
-        // Verify swap token info
+        // Verify swap token info and fees token
         let acc_inb = &ctx.accounts.inb_info.to_account_info();
         let acc_out = &ctx.accounts.out_info.to_account_info();
+        let acc_fee = &ctx.accounts.fees_token.to_account_info();
         let sw = &ctx.accounts.swap_data;
         if ! sw.active {
             msg!("Inactive swap");
             return Err(ErrorCode::AccessDenied.into());
         }
+        verify_matching_accounts(&sw.fees_token, acc_fee.key, Some(String::from("Invalid fees token")))?;
         verify_matching_accounts(&sw.inb_token_info, acc_inb.key, Some(String::from("Invalid inbound token info")))?;
         verify_matching_accounts(&sw.out_token_info, acc_out.key, Some(String::from("Invalid outbound token info")))?;
         let inb_info = &mut ctx.accounts.inb_info;
@@ -1025,7 +1027,7 @@ pub mod swap_contract {
             } else {
                 fees_input = tokens_out;
             }
-            fees_net = fees_input.checked_mul(sw.fees_bps).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            fees_net = fees_input.checked_mul(sw.fees_bps as u64).ok_or(ProgramError::from(ErrorCode::Overflow))?;
             fees_net = fees_net.checked_div(10000).ok_or(ProgramError::from(ErrorCode::Overflow))?;
             msg!("Atellix: Fees Net: {}", fees_net.to_string());
             if inp_is_buy {
@@ -1086,8 +1088,8 @@ pub mod swap_contract {
                 ];
                 let fees_signer = &[&fees_seeds[..]];
                 let fees_accounts = Transfer {
-                    from: acc_inb_token_dst,
-                    to: ctx.accounts.fees_account.to_account_info(),
+                    from: ctx.accounts.inb_token_dst.clone(),
+                    to: ctx.accounts.fees_token.to_account_info(),
                     authority: ctx.accounts.root_data.to_account_info(),
                 };
                 let cpi_prog = ctx.accounts.token_program.clone();
@@ -1101,8 +1103,8 @@ pub mod swap_contract {
                 ];
                 let fees_signer = &[&fees_seeds[..]];
                 let fees_accounts = Transfer {
-                    from: acc_out_token_src,
-                    to: ctx.accounts.fees_account.to_account_info(),
+                    from: ctx.accounts.out_token_src.clone(),
+                    to: ctx.accounts.fees_token.to_account_info(),
                     authority: ctx.accounts.root_data.to_account_info(),
                 };
                 let cpi_prog = ctx.accounts.token_program.clone();
@@ -1120,6 +1122,7 @@ pub mod swap_contract {
         ctx.accounts.swap_data.swap_tx_count = ctx.accounts.swap_data.swap_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         ctx.accounts.swap_data.swap_inb_tokens = ctx.accounts.swap_data.swap_inb_tokens.checked_add(tokens_inb).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         ctx.accounts.swap_data.swap_out_tokens = ctx.accounts.swap_data.swap_out_tokens.checked_add(tokens_out).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        ctx.accounts.swap_data.fees_total = ctx.accounts.swap_data.fees_total.checked_add(fees_net).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         ctx.accounts.swap_data.inb_token_tx = inb_info.token_tx_count;
         ctx.accounts.swap_data.out_token_tx = out_info.token_tx_count;
         ctx.accounts.swap_data.slot = clock.slot;
@@ -1135,7 +1138,7 @@ pub mod swap_contract {
             out_mint: out_info.mint,
             out_tokens: tokens_out,
             out_token_dst: ctx.accounts.out_token_dst.key(),
-            fees_mint: if (ctx.accounts.swap_data.fees_inbound) { inb_info.mint } else { out_info.mint },
+            fees_mint: if ctx.accounts.swap_data.fees_inbound { inb_info.mint } else { out_info.mint },
             fees_amount: fees_net,
             fees_token: ctx.accounts.swap_data.fees_token,
             use_oracle: oracle_log_inuse,
@@ -1209,7 +1212,7 @@ pub struct CreateSwap<'info> {
     pub swap_data: AccountInfo<'info>,
     pub inb_info: ProgramAccount<'info, TokenInfo>,
     pub out_info: ProgramAccount<'info, TokenInfo>,
-    pub fees_account: AccountInfo<'info>,
+    pub fees_token: AccountInfo<'info>,
 }
 
 #[derive(Accounts)]

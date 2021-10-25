@@ -16,6 +16,8 @@ const swapContract = anchor.workspace.SwapContract
 const swapContractPK = swapContract.programId
 const oraclePK = new PublicKey('DpoK8Zz69APV9ntjuY9C4LZCxANYMV56M2cbXEdkjxME')
 
+console.log("User: " + provider.wallet.publicKey.toString())
+
 const SPL_ASSOCIATED_TOKEN = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
 async function associatedTokenAddress(walletAddress, tokenMintAddress) {
     const addr = await PublicKey.findProgramAddress(
