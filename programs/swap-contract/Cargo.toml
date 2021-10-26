@@ -24,3 +24,4 @@ num_enum = "0.5.4"
 byte-slice-cast = "1.0.0"
 slab-alloc = { version = "1.0.0", path = "/Users/mfrager/Build/solana/crates/slab-alloc" }
 decode-account = { version = "1.0.0", path = "/Users/mfrager/Build/solana/crates/decode-account" }
+#net-authority = { version = "0.1.0", path = "/Users/mfrager/Build/solana/net-authority/programs/net-authority", features = ["cpi"] }
