@@ -1048,7 +1048,9 @@ pub mod swap_contract {
         msg!("Atellix: Available Outbound Tokens: {}", out_info.amount.to_string());
         inb_info.amount = inb_info.amount.checked_add(tokens_inb).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         out_info.amount = out_info.amount.checked_sub(tokens_out).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        if ! sw.fees_inbound {
+        if sw.fees_inbound {
+            inb_info.amount = inb_info.amount.checked_sub(fees_net).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        } else {
             out_info.amount = out_info.amount.checked_sub(fees_net).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         }
 

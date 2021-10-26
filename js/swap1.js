@@ -89,17 +89,27 @@ async function main() {
     var swapDeposit1
     var swapWithdraw1
 
-    var ndjs
+    var spjs
     try {
         spjs = await fs.readFile('/Users/mfrager/Build/solana/swap-contract/js/swap.json')
     } catch (error) {
         console.error('File Error: ', error)
     }
     const swapCache = JSON.parse(spjs.toString())
-    tokenMint1 = new PublicKey(swapCache.tokenMint1)
-    tokenMint2 = new PublicKey(swapCache.tokenMint2)
+
+    var djs
+    try {
+        djs = await fs.readFile('/Users/mfrager/Build/solana/swap-contract/js/data-6Kw2HUEu.json')
+    } catch (error) {
+        console.error('File Error: ', error)
+    }
+    const swapSpec = JSON.parse(djs.toString())
+
+    tokenMint1 = new PublicKey(swapSpec.tokenMint1)
+    tokenMint2 = new PublicKey(swapSpec.tokenMint2)
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
-    swapDataPK = new PublicKey(swapCache.swapData)
+    swapDataPK = new PublicKey(swapSpec.swapData)
+    feesTK = new PublicKey(swapSpec.feesToken)
     swapAdmin1 = importSecretKey(swapCache.swapAdmin1_secret)
     swapDeposit1 = importSecretKey(swapCache.swapDeposit1_secret)
     swapWithdraw1 = importSecretKey(swapCache.swapWithdraw1_secret)
@@ -109,7 +119,7 @@ async function main() {
     const tokData1 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint1)
     const tokData2 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint2)
 
-    console.log('Swap: ' + swapCache.swapData)
+    console.log('Swap: ' + swapSpec.swapData)
     const userToken1 = await associatedTokenAddress(provider.wallet.publicKey, tokenMint1)
     const userToken2 = await associatedTokenAddress(provider.wallet.publicKey, tokenMint2)
 
@@ -132,12 +142,13 @@ async function main() {
         outTokenSrc: new PublicKey(tokData2.pubkey).toString(),
         outTokenDst: new PublicKey(userToken2.pubkey).toString(),
         outMint: tokenMint2.toString(),
+        feesToken: feesTK.toString(),
     })
     await swapContract.rpc.swap(
         rootData.nonce,
         tokData1.nonce,
         tokData2.nonce,
-        false, // True - Buy, False - Sell
+        true, // True - Buy, False - Sell
         new anchor.BN(50 * 10000),
         {
             accounts: {
@@ -152,7 +163,7 @@ async function main() {
                 outTokenSrc: new PublicKey(tokData2.pubkey),
                 outTokenDst: new PublicKey(userToken2.pubkey),
                 tokenProgram: TOKEN_PROGRAM_ID,
-                //feesAccount: feesAcct.publicKey,
+                feesToken: feesTK,
             },
             remainingAccounts: [
                 { pubkey: oraclePK, isWritable: false, isSigner: false },
