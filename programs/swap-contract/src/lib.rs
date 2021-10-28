@@ -922,25 +922,108 @@ pub mod swap_contract {
         }
 
         let mut oracle_log_key: Pubkey = Pubkey::default();
-        let mut oracle_log_val: u128 = 0;
         let mut oracle_log_inuse: bool = false;
+        let mut oracle_log_val: u128 = 0;
+        let mut extra_decimals: u128 = 0;
         if sw.oracle_rates || sw.oracle_verify {
             let acc_orac = ctx.remaining_accounts.get(0).unwrap();
             verify_matching_accounts(acc_orac.key, &sw.oracle_data, Some(String::from("Invalid oracle data")))?;
             oracle_log_key = *acc_orac.key;
             oracle_log_inuse = true;
+
+            let oracle_type = OracleType::try_from(sw.oracle_type).unwrap();
+            let oracle_val: f64;
+            if oracle_type == OracleType::Switchboard {
+                let feed_data = FastRoundResultAccountData::deserialize(&acc_orac.try_borrow_data()?).unwrap();
+                oracle_val = feed_data.result.result;
+            } else {
+                msg!("Invalid oracle type");
+                return Err(ErrorCode::InternalError.into());
+            }
+            msg!("Atellix: Oracle value: {}", oracle_val.to_string());
+            let adjust_u: u32 = 8; // Calculate to 8 decimal places
+            let adjust_i: i32 = 8;
+            let base_u: u128 = 10;
+            let base_f: f64 = 10.0;
+            let oracle_adj: f64 = oracle_val * base_f.powi(adjust_i);
+            oracle_log_val = oracle_adj as u128;
+            extra_decimals = base_u.pow(adjust_u);
+            msg!("Atellix: Extra decimals: {}", extra_decimals.to_string());
         }
 
         /*if sw.oracle_verify { // Check for valid oracle range before proceeding
         }*/
 
         msg!("Atellix: Tokens verified ready to swap");
-        let mut tokens_inb: u64;
-        let mut tokens_out: u64;
-        
+        let mut swap_rate: u128 = sw.rate_swap as u128;
+        let mut base_rate: u128 = sw.rate_base as u128;
+        let mut fee_rate: u128 = sw.fees_bps as u128;
         if sw.oracle_rates {
             msg!("Atellix: Use oracle rates");
-            tokens_inb = inp_tokens;
+            let in_decimals: i32 = ctx.accounts.inb_info.decimals as i32;
+            let out_decimals: i32 = ctx.accounts.out_info.decimals as i32;
+            let mut abs_decimals: in_decimals.checked_sub(out_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            abs_decimals = abs_decimals.abs();
+            let abs_decimals_u: u128 = u128::try_from(abs_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            let adjust_decimals: u128 = base_u.checked_pow(abs_decimals_u).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            if sw.oracle_inverse {
+                msg!("Atellix: Inverse oracle");
+                swap_rate = oracle_log_val;
+                base_rate = adjust_decimals;
+            } else {
+                swap_rate = adjust_decimals;
+                base_rate = oracle_log_val;
+            }
+        }
+        msg!("Atellix: Rates - Swap: {} Base: {}", swap_rate.to_string(), base_rate.to_string());
+        let mut input_val: u128 = inp_tokens as u128;
+        let mut nmr_1: u128 = input_val;
+        let mut nmr_2: u128 = 0;
+        if fee_rate > 0 {
+            let mut fee_part: u128 = input_val.checked_mul(fee_rate).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            fee_part = fee_part.checked_div(10000).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            if inp_is_buy {
+                nmr_2 = nmr_1.checked_add(fee_part).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            } else {
+                nmr_2 = nmr_1.checked_sub(fee_part).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            }
+        } else {
+            nmr_2 = nmr_1;
+        }
+        let mut nmr_3: u128 = 0;
+        let mut dnm_1: u128 = 0;
+        if inp_is_buy {
+            nmr_3 = swap_rate;
+            dnm_1 = base_rate;
+        } else {
+            nmr_3 = base_rate;
+            dnm_1 = swap_rate;
+        }
+        let mut nmr_4: u128 = nmr_2.checked_mul(nmr_3).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        let mut result: u128 = nmr_4.checked_div(dnm_1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        if extra_decimals > 0 {
+            result = result.checked_div(extra_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        }
+        msg!("Atellix: Result: {}", result.to_string());
+
+        let mut tokens_inb: u64 = 0;
+        let mut tokens_inb_fees: u64 = 0;
+        let mut tokens_out: u64 = 0;
+        let mut tokens_out_fees: u64 = 0;
+        if inp_is_buy {
+            tokens_inb = u64::try_from(result);
+            tokens_inb = 
+        } else {
+        }
+
+        // OLD ALG
+        /*let mut input_tokens: u64 = inp_tokens;
+        let mut tokens_inb: u64;
+        let mut tokens_out: u64;
+
+        if sw.oracle_rates {
+            msg!("Atellix: Use oracle rates");
+            tokens_inb = input_tokens;
             let acc_orac = ctx.remaining_accounts.get(0).unwrap();
             let oracle_type = OracleType::try_from(sw.oracle_type).unwrap();
             let oracle_val: f64;
@@ -1001,41 +1084,22 @@ pub mod swap_contract {
             tokens_out = calc_out as u64;
         } else if sw.rate_swap == sw.rate_base { // Symmetrical swap
             msg!("Atellix: Symmetrical swap");
-            tokens_inb = inp_tokens;
+            tokens_inb = input_tokens;
             tokens_out = inp_tokens;
         } else {
             msg!("Atellix: Ratio swap");
             if inp_is_buy {         // Buy order (price in outbound tokens)
                 msg!("Atellix: Buy order");
-                tokens_out = inp_tokens;
+                tokens_out = input_tokens;
                 tokens_inb = tokens_out.checked_mul(sw.rate_swap).ok_or(ProgramError::from(ErrorCode::Overflow))?;
                 tokens_inb = tokens_inb.checked_div(sw.rate_base).ok_or(ProgramError::from(ErrorCode::Overflow))?;
             } else {                // Sell order (price in inbound tokens)
                 msg!("Atellix: Sell order");
-                tokens_inb = inp_tokens;
+                tokens_inb = input_tokens;
                 tokens_out = tokens_inb.checked_mul(sw.rate_base).ok_or(ProgramError::from(ErrorCode::Overflow))?;
                 tokens_out = tokens_out.checked_div(sw.rate_swap).ok_or(ProgramError::from(ErrorCode::Overflow))?;
             }
-        }
-
-        // Calculate fees
-        let mut fees_net: u64 = 0;
-        if sw.fees_bps > 0 {
-            let fees_input: u64;
-            if sw.fees_inbound {
-                fees_input = tokens_inb;
-            } else {
-                fees_input = tokens_out;
-            }
-            fees_net = fees_input.checked_mul(sw.fees_bps as u64).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-            fees_net = fees_net.checked_div(10000).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-            msg!("Atellix: Fees Net: {}", fees_net.to_string());
-            if inp_is_buy {
-                tokens_inb = tokens_inb.checked_add(fees_net).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-            } else {
-                tokens_out = tokens_out.checked_sub(fees_net).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-            }
-        }
+        }*/
 
         msg!("Atellix: Inbound Tokens: {}", tokens_inb.to_string());
         msg!("Atellix: Outbound Tokens: {}", tokens_out.to_string());
