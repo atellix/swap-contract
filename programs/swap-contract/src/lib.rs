@@ -673,6 +673,7 @@ pub mod swap_contract {
         ctx.accounts.token_info.slot = clock.slot;
 
         //msg!("Atellix: New token amount: {}", ctx.accounts.token_info.amount.to_string());
+        msg!("atellix-log");
         emit!(TransferEvent {
             event_hash: 86124742241384372364379956883437878997, // solana/program/atx-swap-contract/deposit_mint
             slot: clock.slot,
@@ -754,6 +755,7 @@ pub mod swap_contract {
         ctx.accounts.token_info.slot = clock.slot;
 
         //msg!("Atellix: New token amount: {}", ctx.accounts.token_info.amount.to_string());
+        msg!("atellix-log");
         emit!(TransferEvent {
             event_hash: 46880124277820728117333064135303940398, // solana/program/atx-swap-contract/deposit_transfer
             slot: clock.slot,
@@ -834,6 +836,7 @@ pub mod swap_contract {
         ctx.accounts.token_info.slot = clock.slot;
 
         msg!("Atellix: New token amount: {}", ctx.accounts.token_info.amount.to_string());
+        msg!("atellix-log");
         emit!(TransferEvent {
             event_hash: 107672350896016821143127613886765419987, // solana/program/atx-swap-contract/withdraw
             slot: clock.slot,
@@ -1166,6 +1169,7 @@ pub mod swap_contract {
         ctx.accounts.swap_data.out_token_tx = out_info.token_tx_count;
         ctx.accounts.swap_data.slot = clock.slot;
 
+        msg!("atellix-log");
         emit!(SwapEvent {
             event_hash: 144834217477609949185867766428666600068, // "solana/program/atx-swap-contract/swap" (MurmurHash3 128-bit unsigned)
             slot: clock.slot,
