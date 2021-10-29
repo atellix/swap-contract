@@ -144,6 +144,7 @@ async function main() {
         new anchor.BN(10 ** 4), // base rate
         true, // fees on inbound token
         100, // fees basis points
+        false, // merchant-only
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),

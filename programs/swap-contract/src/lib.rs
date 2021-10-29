@@ -14,6 +14,8 @@ use solana_program::{
     clock::Clock
 };
 
+use net_authority::{ cpi::accounts::RecordRevenue, MerchantApproval };
+
 extern crate slab_alloc;
 use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, SlabVec, SlabTreeError };
 
@@ -540,6 +542,7 @@ pub mod swap_contract {
         inp_base_rate: u64,         // Base rate
         inp_fees_inbound: bool,     // Take fees from inbound token (alternatively use the outbound token)
         inp_fees_bps: u32,          // Fees basis points
+        inp_merchant_only: bool,    // Merchant-only swap
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
         let acc_swap = &ctx.accounts.swap_data.to_account_info(); 
@@ -579,7 +582,7 @@ pub mod swap_contract {
         let sw = SwapData {
             active: true,
             slot: clock.slot,
-            merchant_only: false,
+            merchant_only: inp_merchant_only,
             oracle_data: oracle,
             oracle_type: inp_oracle_type,
             oracle_rates: inp_oracle_rates,
@@ -853,7 +856,7 @@ pub mod swap_contract {
         Ok(())
     }
 
-    pub fn swap(ctx: Context<Swap>,
+    pub fn swap<'info>(ctx: Context<'_, '_, '_, 'info, Swap<'info>>,
         inp_root_nonce: u8,
         inp_inb_nonce: u8,          // Associated token nonce for inb_token_dst
         inp_out_nonce: u8,          // Associated token nonce for out_token_src
@@ -869,8 +872,6 @@ pub mod swap_contract {
             .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
         verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
         verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
-
-        // TODO: verify merchants with net authority if needed
 
         // Verify swap token info and fees token
         let acc_inb = &ctx.accounts.inb_info.to_account_info();
@@ -923,6 +924,40 @@ pub mod swap_contract {
             msg!("Invalid outbound token source account");
             return Err(ErrorCode::InvalidDerivedAccount.into());
         }
+
+        // Verify merchant approval for merchant swaps
+        let mut merchant_revenue: u64 = 0;
+        let mut merchant_offset: usize = 0;
+        if sw.merchant_only {
+            if sw.oracle_rates || sw.oracle_verify {
+                merchant_offset = 1;
+            }
+            let acc_mrch_approval = ctx.remaining_accounts.get(merchant_offset).unwrap();
+            let netauth_role = has_role(&acc_auth, Role::NetAuthority, acc_mrch_approval.owner);
+            if netauth_role.is_err() {
+                msg!("Invalid network authority");
+                return Err(ErrorCode::AccessDenied.into());
+            }
+            let mut aprv_data: &[u8] = &acc_mrch_approval.try_borrow_data()?;
+            let mrch_approval = MerchantApproval::try_deserialize(&mut aprv_data)?;
+            if ! mrch_approval.active {
+                msg!("Inactive merchant approval");
+                return Err(ErrorCode::AccessDenied.into());
+            }
+            let spl_token: Pubkey = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
+            let asc_token: Pubkey = Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL").unwrap();
+            let (mrch_token, _bump_seed) = Pubkey::find_program_address(
+                &[
+                    mrch_approval.merchant_key.as_ref(),
+                    spl_token.as_ref(),
+                    mrch_approval.token_mint.as_ref(),
+                ],
+                &asc_token,
+            );
+            verify_matching_accounts(acc_inb_token_src.key, &mrch_token, Some(String::from("Invalid merchant associated token")))?;
+            merchant_revenue = mrch_approval.revenue;
+        }
+        msg!("Atellix: Merchant Revenue: {}", merchant_revenue.to_string());
 
         let mut oracle_log_key: Pubkey = Pubkey::default();
         let mut oracle_log_inuse: bool = false;
@@ -1017,7 +1052,7 @@ pub mod swap_contract {
                 }
             }
         }
-        let mut result: u128 = nmr_4.checked_div(dnm_1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        let result: u128 = nmr_4.checked_div(dnm_1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         msg!("Atellix: Result: {}", result.to_string());
 
         let tokens_inb: u64;
@@ -1076,13 +1111,36 @@ pub mod swap_contract {
             }
             tokens_fee = u64::try_from(fee_1).map_err(|_| ErrorCode::Overflow)?;
         }
-        
+
         msg!("Atellix: Inbound Tokens: {}", tokens_inb.to_string());
         msg!("Atellix: Outbound Tokens: {}", tokens_out.to_string());
         if sw.fees_inbound {
             msg!("Atellix: Fees Inbound Tokens: {}", tokens_fee.to_string());
         } else {
             msg!("Atellix: Fees Outbound Tokens: {}", tokens_fee.to_string());
+        }
+
+        if sw.merchant_only {
+            if tokens_inb > merchant_revenue {
+                msg!("Atellix: Inbound token exceeds merchant balance");
+                return Err(ErrorCode::Overflow.into());
+            }
+
+            // Record merchant revenue
+            let seeds = &[ctx.program_id.as_ref(), &[inp_root_nonce]];
+            let signer = &[&seeds[..]];
+            let na_program = ctx.remaining_accounts.get(merchant_offset + 1).unwrap(); // NetAuthority Program
+            let na_accounts = RecordRevenue {
+                root_data: ctx.remaining_accounts.get(merchant_offset + 2).unwrap().clone(), // NetAuthority Root Data
+                auth_data: ctx.remaining_accounts.get(merchant_offset + 3).unwrap().clone(), // NetAuthority Auth Data
+                revenue_admin: ctx.accounts.root_data.to_account_info(),
+                merchant_approval: ctx.remaining_accounts.get(merchant_offset).unwrap().clone(),
+            };
+            let na_ctx = CpiContext::new_with_signer(na_program.clone(), na_accounts, signer);
+            let (_addr, net_nonce) = Pubkey::find_program_address(&[na_program.key.as_ref()], na_program.key);
+ 
+            msg!("Atellix: Attempt to record revenue withdrawal");
+            net_authority::cpi::record_revenue(na_ctx, net_nonce, false, tokens_inb)?;
         }
 
         msg!("Atellix: Available Outbound Tokens: {}", out_info.amount.to_string());
