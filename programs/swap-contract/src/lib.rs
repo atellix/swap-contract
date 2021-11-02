@@ -1089,13 +1089,13 @@ pub mod swap_contract {
             let oracle_adj: f64 = oracle_val * base_f.powi(adjust_i);
             oracle_log_val = oracle_adj as u128;
             extra_decimals = base_u.pow(adjust_u);
-            msg!("Atellix: Extra decimals: {}", extra_decimals.to_string());
+            //msg!("Atellix: Extra decimals: {}", extra_decimals.to_string());
         }
 
         /*if sw.oracle_verify { // Check for valid oracle range before proceeding
         }*/
 
-        msg!("Atellix: Tokens verified ready to swap");
+        //msg!("Atellix: Tokens verified ready to swap");
         let mut swap_rate: u128 = sw.rate_swap as u128;
         let mut base_rate: u128 = sw.rate_base as u128;
         if sw.oracle_rates {
@@ -1115,10 +1115,10 @@ pub mod swap_contract {
                 base_rate = oracle_log_val;
             }
         }
-        msg!("Atellix: Rates - Swap: {} Base: {}", swap_rate.to_string(), base_rate.to_string());
+        //msg!("Atellix: Rates - Swap: {} Base: {}", swap_rate.to_string(), base_rate.to_string());
         let input_val: u128 = inp_tokens as u128;
         let result: u128 = calculate_swap(sw, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals)?;
-        msg!("Atellix: Result: {}", result.to_string());
+        //msg!("Atellix: Result: {}", result.to_string());
 
         let tokens_inb: u64;
         let tokens_out: u64;
