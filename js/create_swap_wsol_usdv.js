@@ -101,7 +101,7 @@ async function main() {
     const tokData1 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint1)
     const tokData2 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint2)
 
-    var feesInbound = true
+    var feesInbound = false
     var feesToken
     if (feesInbound) {
         feesToken = await associatedTokenAddress(feesOwner.publicKey, tokenMint1)

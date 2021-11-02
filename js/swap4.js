@@ -99,7 +99,7 @@ async function main() {
 
     var djs
     try {
-        djs = await fs.readFile('/Users/mfrager/Build/solana/swap-contract/js/json/data-usdv-wsol.json')
+        djs = await fs.readFile('/Users/mfrager/Build/solana/swap-contract/js/json/data-wsol-usdv.json')
     } catch (error) {
         console.error('File Error: ', error)
     }
@@ -150,7 +150,8 @@ async function main() {
         tokData2.nonce,
         true, // True - Buy, False - Sell
         //new anchor.BN(10 ** 9),
-        new anchor.BN(400 * (10**4)),
+        //new anchor.BN(400 * (10**4)),
+        new anchor.BN(1 * (10**9)),
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
