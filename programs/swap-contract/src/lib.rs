@@ -1063,7 +1063,6 @@ pub mod swap_contract {
             msg!("Atellix: Merchant Revenue: {}", merchant_revenue.to_string());
         }
 
-        let mut oracle_log_key: Pubkey = Pubkey::default();
         let mut oracle_log_inuse: bool = false;
         let mut oracle_log_val: u128 = 0;
         let mut extra_decimals: u128 = 0;
@@ -1074,7 +1073,6 @@ pub mod swap_contract {
         if sw.oracle_rates || sw.oracle_verify {
             let acc_orac = ctx.remaining_accounts.get(0).unwrap();
             verify_matching_accounts(acc_orac.key, &sw.oracle_data, Some(String::from("Invalid oracle data")))?;
-            oracle_log_key = *acc_orac.key;
             oracle_log_inuse = true;
             let oracle_type = OracleType::try_from(sw.oracle_type).unwrap();
             let oracle_val: f64;
@@ -1085,7 +1083,7 @@ pub mod swap_contract {
                 msg!("Invalid oracle type");
                 return Err(ErrorCode::InternalError.into());
             }
-            msg!("Atellix: Oracle value: {}", oracle_val.to_string());
+            msg!("Atellix: Orcl: {}", oracle_val.to_string());
             let oracle_adj: f64 = oracle_val * base_f.powi(adjust_i);
             oracle_log_val = oracle_adj as u128;
             extra_decimals = base_u.pow(adjust_u);
@@ -1099,7 +1097,7 @@ pub mod swap_contract {
         let mut swap_rate: u128 = sw.rate_swap as u128;
         let mut base_rate: u128 = sw.rate_base as u128;
         if sw.oracle_rates {
-            msg!("Atellix: Use oracle rates");
+            //msg!("Atellix: Use oracle rates");
             let in_decimals: i32 = inb_info.decimals as i32;
             let out_decimals: i32 = out_info.decimals as i32;
             let mut abs_decimals: i32 = in_decimals.checked_sub(out_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
@@ -1107,7 +1105,7 @@ pub mod swap_contract {
             let abs_decimals_u: u32 = u32::try_from(abs_decimals).map_err(|_| ErrorCode::Overflow)?;
             let adjust_decimals: u128 = base_u.checked_pow(abs_decimals_u).ok_or(ProgramError::from(ErrorCode::Overflow))?;
             if sw.oracle_inverse {
-                msg!("Atellix: Inverse oracle");
+                //msg!("Atellix: Inverse oracle");
                 swap_rate = oracle_log_val;
                 base_rate = adjust_decimals;
             } else {
@@ -1131,12 +1129,11 @@ pub mod swap_contract {
         }
         let tokens_fee: u64 = calculate_fee(sw, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals)?;
 
-        msg!("Atellix: Inbound Tokens: {}", tokens_inb.to_string());
-        msg!("Atellix: Outbound Tokens: {}", tokens_out.to_string());
+        msg!("Atellix: Inb: {} Out: {}", tokens_inb.to_string(), tokens_out.to_string());
         if sw.fees_inbound {
-            msg!("Atellix: Fees Inbound Tokens: {}", tokens_fee.to_string());
+            msg!("Atellix: Fee Inb: {}", tokens_fee.to_string());
         } else {
-            msg!("Atellix: Fees Outbound Tokens: {}", tokens_fee.to_string());
+            msg!("Atellix: Fee Out: {}", tokens_fee.to_string());
         }
 
         if sw.merchant_only {
@@ -1162,7 +1159,7 @@ pub mod swap_contract {
             net_authority::cpi::record_revenue(na_ctx, net_nonce, false, tokens_inb)?;
         }
 
-        msg!("Atellix: Available Outbound Tokens: {}", out_info.amount.to_string());
+        //msg!("Atellix: Available Outbound Tokens: {}", out_info.amount.to_string());
         inb_info.amount = inb_info.amount.checked_add(tokens_inb).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         out_info.amount = out_info.amount.checked_sub(tokens_out).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         if sw.fees_inbound {
@@ -1171,8 +1168,8 @@ pub mod swap_contract {
             out_info.amount = out_info.amount.checked_sub(tokens_fee).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         }
 
-        msg!("Atellix: New Inbound Amount: {}", inb_info.amount.to_string());
-        msg!("Atellix: New Outbound Amount: {}", out_info.amount.to_string());
+        //msg!("Atellix: New Inbound Amount: {}", inb_info.amount.to_string());
+        //msg!("Atellix: New Outbound Amount: {}", out_info.amount.to_string());
 
         let in_accounts = Transfer {
             from: acc_inb_token_src,
@@ -1181,7 +1178,7 @@ pub mod swap_contract {
         };
         let cpi_prog1 = ctx.accounts.token_program.clone();
         let in_ctx = CpiContext::new(cpi_prog1, in_accounts);
-        msg!("Atellix: Attempt Inbound Transfer");
+        //msg!("Atellix: Attempt Inbound Transfer");
         token::transfer(in_ctx, tokens_inb)?;
 
         let out_seeds = &[
@@ -1196,7 +1193,7 @@ pub mod swap_contract {
         };
         let cpi_prog2 = ctx.accounts.token_program.clone();
         let out_ctx = CpiContext::new_with_signer(cpi_prog2, out_accounts, out_signer);
-        msg!("Atellix: Attempt Outbound Transfer");
+        //msg!("Atellix: Attempt Outbound Transfer");
         token::transfer(out_ctx, tokens_out)?;
 
         if tokens_fee > 0 {
@@ -1213,7 +1210,7 @@ pub mod swap_contract {
                 };
                 let cpi_prog = ctx.accounts.token_program.clone();
                 let fees_ctx = CpiContext::new_with_signer(cpi_prog, fees_accounts, fees_signer);
-                msg!("Atellix: Attempt Fees Transfer - Inbound Token");
+                //msg!("Atellix: Attempt Fees Transfer - Inbound Token");
                 token::transfer(fees_ctx, tokens_fee)?;
             } else {
                 let fees_seeds = &[
@@ -1228,7 +1225,7 @@ pub mod swap_contract {
                 };
                 let cpi_prog = ctx.accounts.token_program.clone();
                 let fees_ctx = CpiContext::new_with_signer(cpi_prog, fees_accounts, fees_signer);
-                msg!("Atellix: Attempt Fees Transfer - Outbound Token");
+                //msg!("Atellix: Attempt Fees Transfer - Outbound Token");
                 token::transfer(fees_ctx, tokens_fee)?;
             }
         }
@@ -1253,17 +1250,14 @@ pub mod swap_contract {
             slot: clock.slot,
             swap_data: ctx.accounts.swap_data.key(),
             user: ctx.accounts.swap_user.key(),
-            inb_mint: inb_info.mint,
             inb_tokens: tokens_inb,
             inb_token_src: ctx.accounts.inb_token_src.key(),
-            out_mint: out_info.mint,
             out_tokens: tokens_out,
             out_token_dst: ctx.accounts.out_token_dst.key(),
-            fees_mint: if ctx.accounts.swap_data.fees_inbound { inb_info.mint } else { out_info.mint },
+            fees_inbound: ctx.accounts.swap_data.fees_inbound,
             fees_amount: tokens_fee,
             fees_token: ctx.accounts.swap_data.fees_token,
             use_oracle: oracle_log_inuse,
-            oracle: oracle_log_key,
             oracle_val: oracle_log_val,
             swap_inb_tokens: ctx.accounts.swap_data.swap_inb_tokens,
             swap_out_tokens: ctx.accounts.swap_data.swap_out_tokens,
@@ -1485,17 +1479,14 @@ pub struct SwapEvent {
     pub slot: u64,
     pub swap_data: Pubkey,
     pub user: Pubkey,
-    pub inb_mint: Pubkey,
     pub inb_tokens: u64,
     pub inb_token_src: Pubkey,
-    pub out_mint: Pubkey,
     pub out_tokens: u64,
     pub out_token_dst: Pubkey,
-    pub fees_mint: Pubkey,
+    pub fees_inbound: bool,
     pub fees_amount: u64,
     pub fees_token: Pubkey,
     pub use_oracle: bool,
-    pub oracle: Pubkey,
     pub oracle_val: u128,
     pub swap_out_tokens: u64,
     pub swap_inb_tokens: u64,
