@@ -99,7 +99,7 @@ async function main() {
 
     var djs
     try {
-        djs = await fs.readFile('/Users/mfrager/Build/solana/swap-contract/js/json/data-usdv-usdc.json')
+        djs = await fs.readFile('/Users/mfrager/Build/solana/swap-contract/js/json/data-usdc-usdv.json')
     } catch (error) {
         console.error('File Error: ', error)
     }
@@ -151,7 +151,7 @@ async function main() {
         tokData1.nonce,
         tokData2.nonce,
         false, // True - Buy, False - Sell
-        new anchor.BN(50 * 10000),
+        new anchor.BN(25 * 10000),
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),

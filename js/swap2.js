@@ -99,7 +99,7 @@ async function main() {
 
     var djs
     try {
-        djs = await fs.readFile('/Users/mfrager/Build/solana/swap-contract/js/data-7Dm8RJMJ.json')
+        djs = await fs.readFile('/Users/mfrager/Build/solana/swap-contract/js/json/data-usdv-wsol.json')
     } catch (error) {
         console.error('File Error: ', error)
     }

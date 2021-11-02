@@ -88,8 +88,8 @@ async function main() {
 
     var writeData = {}
 
-    var mint1 = 'So11111111111111111111111111111111111111112' // USDC
-    var mint2 = 'HZE3aet4kKEnBdKsTAWcc9Axv6F7p9Yu4rcNJcuxddZr' // USDV
+    var mint1 = 'HZE3aet4kKEnBdKsTAWcc9Axv6F7p9Yu4rcNJcuxddZr' // USDV
+    var mint2 = 'So11111111111111111111111111111111111111112' // WSOL
     console.log("Mints: " + mint1 + " " + mint2)
     tokenMint1 = new PublicKey(mint1)
     tokenMint2 = new PublicKey(mint2)
@@ -135,14 +135,14 @@ async function main() {
     let res = await swapContract.rpc.createSwap(
         rootData.nonce,
         true, // use oracle
-        false, // inverse oracle
+        true, // inverse oracle
         false, // oracle range check
         1, // 0 - no oracle, 1 - switchboard.xyz
         new anchor.BN(0), // range min
         new anchor.BN(0), // range max
-        new anchor.BN(10 ** 9), // swap rate
-        new anchor.BN(10 ** 4), // base rate
-        true, // fees on inbound token
+        new anchor.BN(10 ** 4), // swap rate
+        new anchor.BN(10 ** 9), // base rate
+        feesInbound, // fees on inbound token
         100, // fees basis points
         false, // merchant-only
         {
@@ -162,8 +162,10 @@ async function main() {
         }
     )
     console.log(res)
+    let swapName = swapDataPK.toString().substring(0, 8)
+    swapName = 'wsol-usdv'
     try {
-        await fs.writeFile('data-' + swapDataPK.toString().substring(0, 8) + '.json', JSON.stringify(writeData, null, 4))
+        await fs.writeFile('data-' + swapName + '.json', JSON.stringify(writeData, null, 4))
     } catch (error) {
         console.log("File Error: " + error)
     }
