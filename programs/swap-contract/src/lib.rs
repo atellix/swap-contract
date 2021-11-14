@@ -1063,6 +1063,7 @@ pub mod swap_contract {
             msg!("Atellix: Merchant Revenue: {}", merchant_revenue.to_string());
         }
 
+        let mut oracle_val: f64 = 0.0;
         let mut oracle_log_inuse: bool = false;
         let mut oracle_log_val: u128 = 0;
         let mut extra_decimals: u128 = 0;
@@ -1075,7 +1076,6 @@ pub mod swap_contract {
             verify_matching_accounts(acc_orac.key, &sw.oracle_data, Some(String::from("Invalid oracle data")))?;
             oracle_log_inuse = true;
             let oracle_type = OracleType::try_from(sw.oracle_type).unwrap();
-            let oracle_val: f64;
             if oracle_type == OracleType::Switchboard {
                 let feed_data = FastRoundResultAccountData::deserialize(&acc_orac.try_borrow_data()?).unwrap();
                 oracle_val = feed_data.result.result;
@@ -1090,8 +1090,19 @@ pub mod swap_contract {
             //msg!("Atellix: Extra decimals: {}", extra_decimals.to_string());
         }
 
-        /*if sw.oracle_verify { // Check for valid oracle range before proceeding
-        }*/
+        if sw.oracle_verify { // Check for valid oracle range before proceeding
+            let oracle_adj2: f64 = oracle_val * base_f.powi(6);
+            let oracle_dcm: u64 = oracle_adj2 as u64;
+            msg!("Atellix: Orcl Verify: {} Min: {} Max: {}", oracle_dcm.to_string(), sw.oracle_verify_min.to_string(), sw.oracle_verify_max.to_string());
+            if sw.oracle_verify_min > 0 && sw.oracle_verify_min > oracle_dcm {
+                msg!("Oracle result: {} below minimum: {}", oracle_dcm.to_string(), sw.oracle_verify_min.to_string());
+                return Err(ErrorCode::OracleOutOfRange.into());
+            }
+            if sw.oracle_verify_max > 0 && sw.oracle_verify_max < oracle_dcm {
+                msg!("Oracle result: {} above maximum: {}", oracle_dcm.to_string(), sw.oracle_verify_max.to_string());
+                return Err(ErrorCode::OracleOutOfRange.into());
+            }
+        }
 
         //msg!("Atellix: Tokens verified ready to swap");
         let mut swap_rate: u128 = sw.rate_swap as u128;
@@ -1513,6 +1524,8 @@ pub struct TransferEvent {
 pub enum ErrorCode {
     #[msg("Access denied")]
     AccessDenied,
+    #[msg("Oracle out of range")]
+    OracleOutOfRange,
     #[msg("Invalid parameters")]
     InvalidParameters,
     #[msg("Invalid account")]
