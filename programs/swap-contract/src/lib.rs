@@ -716,6 +716,44 @@ pub mod swap_contract {
         Ok(())
     }
 
+    pub fn update_swap(ctx: Context<UpdateSwap>,
+        inp_root_nonce: u8,         // RootData nonce
+        inp_oracle_verify: bool,    // Use oracle to verify price range (to check peg stability on stablecoins)
+        inp_verify_min: u64,        // Minimum of price range (0 for unused)
+        inp_verify_max: u64,        // Maximum of price range (0 for unused)
+        inp_swap_rate: u64,         // Swap rate
+        inp_base_rate: u64,         // Base rate
+        inp_fees_bps: u32,          // Fees basis points
+    ) -> ProgramResult {
+        let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
+        let acc_root = &ctx.accounts.root_data.to_account_info();
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+
+        // Verify program data
+        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
+            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
+        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
+
+        let admin_role = has_role(&acc_auth, Role::SwapAdmin, acc_admn.key);
+        if admin_role.is_err() {
+            msg!("No swap admin role");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        let sw = &mut ctx.accounts.swap_data;
+        sw.oracle_verify = inp_oracle_verify;
+        sw.oracle_verify_min = inp_verify_min;
+        sw.oracle_verify_max = inp_verify_max;
+        sw.rate_swap = inp_swap_rate;
+        sw.rate_base = inp_base_rate;
+        sw.fees_bps = inp_fees_bps;
+
+        Ok(())
+    }
+
+
+
     pub fn mint_deposit(ctx: Context<MintDeposit>,
         inp_root_nonce: u8,         // RootData nonce
         inp_tinf_nonce: u8,         // Token Info nonce
@@ -1345,6 +1383,16 @@ pub struct CreateSwap<'info> {
     pub inb_info: ProgramAccount<'info, TokenInfo>,
     pub out_info: ProgramAccount<'info, TokenInfo>,
     pub fees_token: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateSwap<'info> {
+    pub root_data: ProgramAccount<'info, RootData>,
+    pub auth_data: AccountInfo<'info>,
+    #[account(signer)]
+    pub swap_admin: AccountInfo<'info>,
+    #[account(mut)]
+    pub swap_data: ProgramAccount<'info, SwapData>,
 }
 
 #[derive(Accounts)]
