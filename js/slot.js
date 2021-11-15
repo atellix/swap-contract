@@ -23,9 +23,11 @@ async function getBlock(slot) {
 
 async function main() {
     console.log('Get Slot')
-    let sl = await provider.connection.getSlot('confirmed')
+    //let sl = await provider.connection.getSlot('confirmed')
+    let sl = 92958467
     console.log(sl)
-    let start = sl - 20
+    //let start = sl - 20
+    let start = sl - 1
     let progs = {}
     for (var k = start; k < sl; k++) {
         console.log('Get Block: ' + k + ' Last Slot: ' + sl)

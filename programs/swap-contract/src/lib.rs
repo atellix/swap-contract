@@ -635,6 +635,7 @@ pub mod swap_contract {
     pub fn create_swap(ctx: Context<CreateSwap>,
         inp_root_nonce: u8,         // RootData nonce
         inp_oracle_rates: bool,     // Use oracle for swap rates
+        inp_oracle_max: bool,       // Use oracle if greater
         inp_oracle_inverse: bool,   // Inverse the oracle for "Buy" orders
         inp_oracle_verify: bool,    // Use oracle to verify price range (to check peg stability on stablecoins)
         inp_oracle_type: u8,        // Use oracle type
@@ -688,6 +689,7 @@ pub mod swap_contract {
             oracle_data: oracle,
             oracle_type: inp_oracle_type,
             oracle_rates: inp_oracle_rates,
+            oracle_max: inp_oracle_max,
             oracle_inverse: inp_oracle_inverse,
             oracle_verify: inp_oracle_verify,
             oracle_verify_min: inp_verify_min,
@@ -1117,14 +1119,18 @@ pub mod swap_contract {
             let adjust_decimals: u128 = base_u.checked_pow(abs_decimals_u).ok_or(ProgramError::from(ErrorCode::Overflow))?;
             if sw.oracle_inverse {
                 //msg!("Atellix: Inverse oracle");
-                swap_rate = oracle_log_val;
+                if (sw.oracle_max && oracle_log_val > swap_rate) || ! sw.oracle_max {
+                    swap_rate = oracle_log_val;
+                }
                 base_rate = adjust_decimals;
             } else {
                 swap_rate = adjust_decimals;
-                base_rate = oracle_log_val;
+                if (sw.oracle_max && oracle_log_val > base_rate) || ! sw.oracle_max {
+                    base_rate = oracle_log_val;
+                }
             }
         }
-        //msg!("Atellix: Rates - Swap: {} Base: {}", swap_rate.to_string(), base_rate.to_string());
+        msg!("Atellix: Rates - Swap: {} Base: {}", swap_rate.to_string(), base_rate.to_string());
         let input_val: u128 = inp_tokens as u128;
         let result: u128 = calculate_swap(sw, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals)?;
         //msg!("Atellix: Result: {}", result.to_string());
@@ -1433,6 +1439,7 @@ pub struct SwapData {
     pub oracle_data: Pubkey,            // Oracle data address or Pubkey::default() for none
     pub oracle_type: u8,                // Oracle data type
     pub oracle_rates: bool,             // Uses oracle data for swap rates
+    pub oracle_max: bool,               // Uses oracle data if greater
     pub oracle_inverse: bool,           // Inverse the oracle rate
     pub oracle_verify: bool,            // Uses oracle data to check for a valid range
     pub oracle_verify_min: u64,         // Valid range minimum (times 10**6, or 6 decimals)

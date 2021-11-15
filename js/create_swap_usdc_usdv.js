@@ -82,6 +82,7 @@ async function main() {
     let res = await swapContract.rpc.createSwap(
         rootData.nonce,
         false, // use oracle
+        false, // oracle max
         false, // inverse oracle
         false, // oracle range check
         0, // 0 - no oracle, 1 - switchboard.xyz
