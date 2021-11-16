@@ -22,7 +22,7 @@ use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, Slab
 extern crate decode_account;
 use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgradeableLoaderAccountType };
 
-declare_id!("FAZL6e8oi66yeMZsgk6SgMMDqr9gL6bp1HBqBMJihPVM");
+declare_id!("Hn5hC6Hxo62dQLPmjP4CBzvF6FpKwuTP1j7VBtgDkwxQ");
 
 pub const MAX_RBAC: u32 = 1024;
 pub const SPL_TOKEN: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
@@ -50,6 +50,7 @@ pub enum Role {             // Role-based access control:
     SwapDeposit,            // Can deposit to swap contracts
     SwapWithdraw,           // Can withdraw from swap contracts
     SwapFees,               // Can receive fees from swaps
+    SwapUpdate,             // Can update swap parameters
     NetAuthority,           // Valid network authority for merchant approvals
 }
 
@@ -735,9 +736,9 @@ pub mod swap_contract {
         verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
         verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
 
-        let admin_role = has_role(&acc_auth, Role::SwapAdmin, acc_admn.key);
+        let admin_role = has_role(&acc_auth, Role::SwapUpdate, acc_admn.key);
         if admin_role.is_err() {
-            msg!("No swap admin role");
+            msg!("No swap update role");
             return Err(ErrorCode::AccessDenied.into());
         }
 
@@ -751,8 +752,6 @@ pub mod swap_contract {
 
         Ok(())
     }
-
-
 
     pub fn mint_deposit(ctx: Context<MintDeposit>,
         inp_root_nonce: u8,         // RootData nonce

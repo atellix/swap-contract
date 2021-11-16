@@ -146,6 +146,22 @@ async function main() {
             }
         )
 
+        console.log('Grant: Swap Update 1 (to swapAdmin1)')
+        await swapContract.rpc.grant(
+            rootData.nonce,
+            5,
+            {
+                accounts: {
+                    program: swapContractPK,
+                    programAdmin: provider.wallet.publicKey,
+                    programData: new PublicKey(programData),
+                    rootData: new PublicKey(rootData.pubkey),
+                    authData: authData.publicKey,
+                    rbacUser: swapAdmin1.publicKey,
+                },
+            }
+        )
+
         await jsonFileWrite('../../data/swap.json', writeData)
     } else {
         const swapCache = await jsonFileRead('../../data/swap.json')

@@ -42,9 +42,9 @@ async function main() {
         false, // oracle range check
         new anchor.BN(0), // range min
         new anchor.BN(0), // range max
-        new anchor.BN(200 * (10 ** 8)), // swap rate
+        new anchor.BN(22971886607),
         new anchor.BN(10 ** 9), // base rate
-        0, // fees basis points
+        100, // fees basis points
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
