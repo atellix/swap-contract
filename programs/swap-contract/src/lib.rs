@@ -754,7 +754,8 @@ pub mod swap_contract {
     }
 
     pub fn update_swap_active(ctx: Context<UpdateSwap>,
-        inp_active: bool,
+        inp_root_nonce: u8,         // RootData nonce
+        inp_active: bool,           // Active flag
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // SwapAdmin role
         let acc_root = &ctx.accounts.root_data.to_account_info();
