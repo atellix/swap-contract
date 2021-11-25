@@ -726,7 +726,7 @@ pub mod swap_contract {
         inp_base_rate: u64,         // Base rate
         inp_fees_bps: u32,          // Fees basis points
     ) -> ProgramResult {
-        let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
+        let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // SwapUpdate role
         let acc_root = &ctx.accounts.root_data.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
 
@@ -749,6 +749,31 @@ pub mod swap_contract {
         sw.rate_swap = inp_swap_rate;
         sw.rate_base = inp_base_rate;
         sw.fees_bps = inp_fees_bps;
+
+        Ok(())
+    }
+
+    pub fn update_swap_active(ctx: Context<UpdateSwap>,
+        inp_active: bool,
+    ) -> ProgramResult {
+        let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // SwapAdmin role
+        let acc_root = &ctx.accounts.root_data.to_account_info();
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+
+        // Verify program data
+        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
+            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
+        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
+
+        let admin_role = has_role(&acc_auth, Role::SwapAdmin, acc_admn.key);
+        if admin_role.is_err() {
+            msg!("No swap admin role");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        let sw = &mut ctx.accounts.swap_data;
+        sw.active = inp_active;
 
         Ok(())
     }
