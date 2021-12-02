@@ -22,7 +22,7 @@ use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, Slab
 extern crate decode_account;
 use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgradeableLoaderAccountType };
 
-declare_id!("Hn5hC6Hxo62dQLPmjP4CBzvF6FpKwuTP1j7VBtgDkwxQ");
+declare_id!("CMVUhwQZZuPFjr719tRN78met1ANjacTmcgAFjtnfKUD");
 
 pub const MAX_RBAC: u32 = 1024;
 pub const SPL_TOKEN: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";

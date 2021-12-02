@@ -55,7 +55,7 @@ function sleep(millis) {
 async function main() {
     var ndjs
     try {
-        ndjs = await fs.readFile('/Users/mfrager/Build/solana/net-authority/js/net.json')
+        ndjs = await fs.readFile('../../data/net.json')
     } catch (error) {
         console.error('File Error: ', error)
     }
@@ -91,7 +91,7 @@ async function main() {
 
     var spjs
     try {
-        spjs = await fs.readFile('/Users/mfrager/Build/solana/swap-contract/js/swap.json')
+        spjs = await fs.readFile('../../data/swap.json')
     } catch (error) {
         console.error('File Error: ', error)
     }
@@ -99,7 +99,7 @@ async function main() {
 
     var djs
     try {
-        djs = await fs.readFile('/Users/mfrager/Build/solana/swap-contract/js/json/data-usdv-usdc.json')
+        djs = await fs.readFile('../../data/swap-usdv-usdc.json')
     } catch (error) {
         console.error('File Error: ', error)
     }
@@ -151,7 +151,7 @@ async function main() {
         tokData1.nonce,
         tokData2.nonce,
         false, // True - Buy, False - Sell
-        new anchor.BN(50 * 10000),
+        new anchor.BN(50 * 1000000),
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
