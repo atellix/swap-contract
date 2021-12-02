@@ -51,6 +51,7 @@ pub enum Role {             // Role-based access control:
     SwapWithdraw,           // Can withdraw from swap contracts
     SwapFees,               // Can receive fees from swaps
     SwapUpdate,             // Can update swap parameters
+    SwapAbort,              // Can deactivate swaps
     NetAuthority,           // Valid network authority for merchant approvals
 }
 
@@ -685,6 +686,7 @@ pub mod swap_contract {
         let clock = Clock::get()?;
         let sw = SwapData {
             active: true,
+            locked: false,
             slot: clock.slot,
             merchant_only: inp_merchant_only,
             oracle_data: oracle,
@@ -719,6 +721,7 @@ pub mod swap_contract {
 
     pub fn update_swap(ctx: Context<UpdateSwap>,
         inp_root_nonce: u8,         // RootData nonce
+        inp_locked: bool,           // Lock / unlock
         inp_oracle_verify: bool,    // Use oracle to verify price range (to check peg stability on stablecoins)
         inp_verify_min: u64,        // Minimum of price range (0 for unused)
         inp_verify_max: u64,        // Maximum of price range (0 for unused)
@@ -736,13 +739,25 @@ pub mod swap_contract {
         verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
         verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
 
-        let admin_role = has_role(&acc_auth, Role::SwapUpdate, acc_admn.key);
-        if admin_role.is_err() {
-            msg!("No swap update role");
+        let sw = &mut ctx.accounts.swap_data;
+        if sw.locked && ! inp_locked { // Unlock operation (only SwapAdmin)
+            let admin_role = has_role(&acc_auth, Role::SwapAdmin, acc_admn.key);
+            if admin_role.is_err() {
+                msg!("No swap admin role");
+                return Err(ErrorCode::AccessDenied.into());
+            }
+        } else if sw.locked {
+            msg!("Swap data locked");
             return Err(ErrorCode::AccessDenied.into());
+        } else {
+            let admin_role = has_role(&acc_auth, Role::SwapUpdate, acc_admn.key);
+            if admin_role.is_err() {
+                msg!("No swap update role");
+                return Err(ErrorCode::AccessDenied.into());
+            }
         }
 
-        let sw = &mut ctx.accounts.swap_data;
+        sw.locked = inp_locked;
         sw.oracle_verify = inp_oracle_verify;
         sw.oracle_verify_min = inp_verify_min;
         sw.oracle_verify_max = inp_verify_max;
@@ -757,7 +772,7 @@ pub mod swap_contract {
         inp_root_nonce: u8,         // RootData nonce
         inp_active: bool,           // Active flag
     ) -> ProgramResult {
-        let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // SwapAdmin role
+        let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // SwapAbort or SwapAdmin role
         let acc_root = &ctx.accounts.root_data.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
 
@@ -767,10 +782,18 @@ pub mod swap_contract {
         verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
         verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
 
-        let admin_role = has_role(&acc_auth, Role::SwapAdmin, acc_admn.key);
-        if admin_role.is_err() {
-            msg!("No swap admin role");
-            return Err(ErrorCode::AccessDenied.into());
+        if inp_active {
+            let admin_role = has_role(&acc_auth, Role::SwapAdmin, acc_admn.key);
+            if admin_role.is_err() {
+                msg!("No swap admin role");
+                return Err(ErrorCode::AccessDenied.into());
+            }
+        } else {
+            let admin_role = has_role(&acc_auth, Role::SwapAbort, acc_admn.key);
+            if admin_role.is_err() {
+                msg!("No swap abort role");
+                return Err(ErrorCode::AccessDenied.into());
+            }
         }
 
         let sw = &mut ctx.accounts.swap_data;
@@ -1507,6 +1530,7 @@ pub struct Swap<'info> {
 #[account]
 pub struct SwapData {
     pub active: bool,                   // Active flag
+    pub locked: bool,                   // Locked flag (prevents updates)
     pub slot: u64,                      // Last slot updated
     pub merchant_only: bool,            // Merchant-only flag
     pub oracle_data: Pubkey,            // Oracle data address or Pubkey::default() for none
