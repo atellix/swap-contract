@@ -24,7 +24,7 @@ use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgrade
 
 declare_id!("CMVUhwQZZuPFjr719tRN78met1ANjacTmcgAFjtnfKUD");
 
-pub const MAX_RBAC: u32 = 1024;
+pub const MAX_RBAC: u32 = 128;
 pub const SPL_TOKEN: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 pub const ASC_TOKEN: &str = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
 
@@ -45,14 +45,13 @@ pub enum DT { // Data types
 #[repr(u32)]
 #[derive(PartialEq, Debug, Eq, Copy, Clone, TryFromPrimitive)]
 pub enum Role {             // Role-based access control:
-    NetworkAdmin,           // Can manage RBAC for other users
-    SwapAdmin,              // Can create swap exchanges and set parameters, rates, etc...
-    SwapDeposit,            // Can deposit to swap contracts
-    SwapWithdraw,           // Can withdraw from swap contracts
-    SwapFees,               // Can receive fees from swaps
-    SwapUpdate,             // Can update swap parameters
-    SwapAbort,              // Can deactivate swaps
-    NetAuthority,           // Valid network authority for merchant approvals
+    NetworkAdmin,           // 0 - Can manage RBAC for other users
+    NetworkAuth,            // 1 - Valid network authority for merchant approvals
+    SwapAdmin,              // 2 - Can create swap exchanges and set parameters, rates, etc...
+    SwapDeposit,            // 3 - Can deposit to swap contracts
+    SwapWithdraw,           // 4 - Can withdraw from swap contracts
+    SwapUpdate,             // 5 - Can update swap parameters
+    SwapAbort,              // 6 - Can deactivate swaps
 }
 
 #[derive(Copy, Clone)]
@@ -1125,7 +1124,7 @@ pub mod swap_contract {
                 merchant_offset = 1;
             }
             let acc_mrch_approval = ctx.remaining_accounts.get(merchant_offset).unwrap();
-            let netauth_role = has_role(&acc_auth, Role::NetAuthority, acc_mrch_approval.owner);
+            let netauth_role = has_role(&acc_auth, Role::NetworkAuth, acc_mrch_approval.owner);
             if netauth_role.is_err() {
                 msg!("Invalid network authority");
                 return Err(ErrorCode::AccessDenied.into());

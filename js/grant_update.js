@@ -29,7 +29,7 @@ async function main() {
     console.log('Grant: Swap Update 1 (to swapAdmin1)')
     await swapContract.rpc.grant(
         rootData.nonce,
-        5,
+        5, // SwapUpdate
         {
             accounts: {
                 program: swapContractPK,

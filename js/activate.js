@@ -101,7 +101,7 @@ async function main() {
         console.log('Grant: Swap Admin 1')
         await swapContract.rpc.grant(
             rootData.nonce,
-            1,
+            2, // SwapAdmin
             {
                 accounts: {
                     program: swapContractPK,
@@ -117,7 +117,7 @@ async function main() {
         console.log('Grant: Swap Deposit 1')
         await swapContract.rpc.grant(
             rootData.nonce,
-            2,
+            3, // SwapDeposit
             {
                 accounts: {
                     program: swapContractPK,
@@ -133,7 +133,7 @@ async function main() {
         console.log('Grant: Swap Withdraw 1')
         await swapContract.rpc.grant(
             rootData.nonce,
-            3,
+            4, // SwapWithdraw
             {
                 accounts: {
                     program: swapContractPK,
@@ -149,7 +149,7 @@ async function main() {
         console.log('Grant: Swap Update 1 (to swapAdmin1)')
         await swapContract.rpc.grant(
             rootData.nonce,
-            5,
+            5, // SwapUpdate
             {
                 accounts: {
                     program: swapContractPK,
