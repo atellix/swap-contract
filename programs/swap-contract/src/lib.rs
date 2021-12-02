@@ -833,8 +833,8 @@ pub mod swap_contract {
         verify_matching_accounts(acc_mint.key, &ctx.accounts.token_info.mint, Some(String::from("Invalid token mint")))?;
 
         // Verify swap associated token
-        let spl_token: Pubkey = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
-        let asc_token: Pubkey = Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL").unwrap();
+        let spl_token: Pubkey = Pubkey::from_str(SPL_TOKEN).unwrap();
+        let asc_token: Pubkey = Pubkey::from_str(ASC_TOKEN).unwrap();
         let derived_key = Pubkey::create_program_address(
             &[
                 &acc_root.key.to_bytes(),
@@ -915,8 +915,8 @@ pub mod swap_contract {
         verify_matching_accounts(acc_mint.key, &ctx.accounts.token_info.mint, Some(String::from("Invalid token mint")))?;
 
         // Verify swap associated token
-        let spl_token: Pubkey = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
-        let asc_token: Pubkey = Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL").unwrap();
+        let spl_token: Pubkey = Pubkey::from_str(SPL_TOKEN).unwrap();
+        let asc_token: Pubkey = Pubkey::from_str(ASC_TOKEN).unwrap();
         let derived_key = Pubkey::create_program_address(
             &[
                 &acc_root.key.to_bytes(),
@@ -996,8 +996,8 @@ pub mod swap_contract {
         verify_matching_accounts(acc_mint.key, &ctx.accounts.token_info.mint, Some(String::from("Invalid token mint")))?;
 
         // Verify swap associated token
-        let spl_token: Pubkey = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
-        let asc_token: Pubkey = Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL").unwrap();
+        let spl_token: Pubkey = Pubkey::from_str(SPL_TOKEN).unwrap();
+        let asc_token: Pubkey = Pubkey::from_str(ASC_TOKEN).unwrap();
         let derived_key = Pubkey::create_program_address(
             &[
                 &acc_root.key.to_bytes(),
@@ -1081,8 +1081,8 @@ pub mod swap_contract {
         let acc_out_token_dst = ctx.accounts.out_token_dst.to_account_info();
 
         // Verify inbound dest associated token
-        let spl_token: Pubkey = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
-        let asc_token: Pubkey = Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL").unwrap();
+        let spl_token: Pubkey = Pubkey::from_str(SPL_TOKEN).unwrap();
+        let asc_token: Pubkey = Pubkey::from_str(ASC_TOKEN).unwrap();
         let derived_key_in = Pubkey::create_program_address(
             &[
                 &acc_root.key.to_bytes(),
