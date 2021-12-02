@@ -50,8 +50,18 @@ pub enum Role {             // Role-based access control:
     SwapDeposit,            // Can deposit to swap contracts
     SwapWithdraw,           // Can withdraw from swap contracts
     SwapFees,               // Can receive fees from swaps
-    SwapUpdate,             // Can update swap parameters
+    SwapUpdateActive,       // Can update swap parameters - Active
+    SwapUpdateVerify,       // Can update swap parameters - Verify
+    SwapUpdateRates,        // Can update swap parameters - SwapRates
     NetAuthority,           // Valid network authority for merchant approvals
+}
+
+#[repr(u8)]
+#[derive(PartialEq, Debug, Eq, Copy, Clone, TryFromPrimitive)]
+pub enum SwapField {
+    Active,
+    OracleVerify,
+    SwapRates,
 }
 
 #[derive(Copy, Clone)]
@@ -638,10 +648,9 @@ pub mod swap_contract {
         inp_oracle_rates: bool,     // Use oracle for swap rates
         inp_oracle_max: bool,       // Use oracle if greater
         inp_oracle_inverse: bool,   // Inverse the oracle for "Buy" orders
-        inp_oracle_verify: bool,    // Use oracle to verify price range (to check peg stability on stablecoins)
         inp_oracle_type: u8,        // Use oracle type
-        inp_verify_min: u64,        // Minimum of price range (0 for unused)
-        inp_verify_max: u64,        // Maximum of price range (0 for unused)
+        inp_verify_min: u128,       // Minimum of price range
+        inp_verify_max: u128,       // Maximum of price range
         inp_swap_rate: u64,         // Swap rate
         inp_base_rate: u64,         // Base rate
         inp_fees_inbound: bool,     // Take fees from inbound token (alternatively use the outbound token)
@@ -677,7 +686,7 @@ pub mod swap_contract {
             ErrorCode::InvalidParameters
         })?;
         let mut oracle: Pubkey = Pubkey::default();
-        if inp_oracle_rates || inp_oracle_verify {
+        if inp_oracle_rates {
             let acc_orac = ctx.remaining_accounts.get(0).unwrap();
             oracle = *acc_orac.key;
         }
@@ -692,9 +701,8 @@ pub mod swap_contract {
             oracle_rates: inp_oracle_rates,
             oracle_max: inp_oracle_max,
             oracle_inverse: inp_oracle_inverse,
-            oracle_verify: inp_oracle_verify,
-            oracle_verify_min: inp_verify_min,
-            oracle_verify_max: inp_verify_max,
+            verify_min: inp_verify_min,
+            verify_max: inp_verify_max,
             rate_swap: inp_swap_rate,
             rate_base: inp_base_rate,
             inb_token_info: *acc_inb.key,
@@ -717,9 +725,9 @@ pub mod swap_contract {
         Ok(())
     }
 
+    // TODO: UPDATE
     pub fn update_swap(ctx: Context<UpdateSwap>,
         inp_root_nonce: u8,         // RootData nonce
-        inp_oracle_verify: bool,    // Use oracle to verify price range (to check peg stability on stablecoins)
         inp_verify_min: u64,        // Minimum of price range (0 for unused)
         inp_verify_max: u64,        // Maximum of price range (0 for unused)
         inp_swap_rate: u64,         // Swap rate
@@ -743,9 +751,8 @@ pub mod swap_contract {
         }
 
         let sw = &mut ctx.accounts.swap_data;
-        sw.oracle_verify = inp_oracle_verify;
-        sw.oracle_verify_min = inp_verify_min;
-        sw.oracle_verify_max = inp_verify_max;
+        sw.verify_min = inp_verify_min;
+        sw.verify_max = inp_verify_max;
         sw.rate_swap = inp_swap_rate;
         sw.rate_base = inp_base_rate;
         sw.fees_bps = inp_fees_bps;
@@ -1098,7 +1105,7 @@ pub mod swap_contract {
         let mut merchant_offset: usize = 0;
         if sw.merchant_only {
             msg!("Merchant-only Swap");
-            if sw.oracle_rates || sw.oracle_verify {
+            if sw.oracle_rates {
                 merchant_offset = 1;
             }
             let acc_mrch_approval = ctx.remaining_accounts.get(merchant_offset).unwrap();
@@ -1136,7 +1143,7 @@ pub mod swap_contract {
         let adjust_i: i32 = 8;
         let base_u: u128 = 10;
         let base_f: f64 = 10.0;
-        if sw.oracle_rates || sw.oracle_verify {
+        if sw.oracle_rates {
             let acc_orac = ctx.remaining_accounts.get(0).unwrap();
             verify_matching_accounts(acc_orac.key, &sw.oracle_data, Some(String::from("Invalid oracle data")))?;
             oracle_log_inuse = true;
@@ -1155,6 +1162,7 @@ pub mod swap_contract {
             //msg!("Atellix: Extra decimals: {}", extra_decimals.to_string());
         }
 
+        // TODO: UPDATE
         if sw.oracle_verify { // Check for valid oracle range before proceeding
             let oracle_adj2: f64 = oracle_val * base_f.powi(6);
             let oracle_dcm: u64 = oracle_adj2 as u64;
@@ -1514,9 +1522,8 @@ pub struct SwapData {
     pub oracle_rates: bool,             // Uses oracle data for swap rates
     pub oracle_max: bool,               // Uses oracle data if greater
     pub oracle_inverse: bool,           // Inverse the oracle rate
-    pub oracle_verify: bool,            // Uses oracle data to check for a valid range
-    pub oracle_verify_min: u64,         // Valid range minimum (times 10**6, or 6 decimals)
-    pub oracle_verify_max: u64,         // Valid range maximum (times 10**6, or 6 decimals)
+    pub verify_min: u128,               // Valid range minimum (times 10**6, or 6 decimals)
+    pub verify_max: u128,               // Valid range maximum (times 10**6, or 6 decimals)
     pub rate_swap: u64,                 // Swap rate
     pub rate_base: u64,                 // Base rate
     pub inb_token_info: Pubkey,         // Token info for inbound tokens
