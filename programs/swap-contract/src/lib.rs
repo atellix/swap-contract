@@ -52,6 +52,7 @@ pub enum Role {             // Role-based access control:
     SwapWithdraw,           // 4 - Can withdraw from swap contracts
     SwapUpdate,             // 5 - Can update swap parameters
     SwapAbort,              // 6 - Can deactivate swaps
+    SwapPermit,             // 7 - Can receive withdrawn tokens
 }
 
 #[derive(Copy, Clone)]
@@ -994,6 +995,13 @@ pub mod swap_contract {
             .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
         verify_matching_accounts(acc_info.key, &acc_tinf_expected, Some(String::from("Invalid token info")))?;
         verify_matching_accounts(acc_mint.key, &ctx.accounts.token_info.mint, Some(String::from("Invalid token mint")))?;
+
+        // Verify withdrawal permit
+        let permit_role = has_role(&acc_auth, Role::SwapPermit, acc_tdst.key);
+        if permit_role.is_err() {
+            msg!("No swap permit role");
+            return Err(ErrorCode::AccessDenied.into());
+        }
 
         // Verify swap associated token
         let spl_token: Pubkey = Pubkey::from_str(SPL_TOKEN).unwrap();
