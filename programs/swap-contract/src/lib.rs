@@ -2,6 +2,7 @@ use std::{ io::Cursor, string::String, str::FromStr, result::Result as FnResult,
 use bytemuck::{ Pod, Zeroable };
 use byte_slice_cast::*;
 use num_enum::{ TryFromPrimitive, IntoPrimitive };
+use arrayref::array_ref;
 use switchboard_program;
 use switchboard_program::{ FastRoundResultAccountData };
 use anchor_lang::prelude::*;
@@ -22,7 +23,7 @@ use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, Slab
 extern crate decode_account;
 use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgradeableLoaderAccountType };
 
-declare_id!("CMVUhwQZZuPFjr719tRN78met1ANjacTmcgAFjtnfKUD");
+declare_id!("GzVcdUpGYVX9hvR1TxDTiawCM5nGvFQ4nAeXnv2GSFPG");
 
 pub const MAX_RBAC: u32 = 128;
 pub const SPL_TOKEN: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
@@ -712,6 +713,11 @@ pub mod swap_contract {
             swap_out_tokens: 0,
         };
         let mut sw_data = acc_swap.try_borrow_mut_data()?;
+        let disc_bytes = array_ref![sw_data, 0, 8];
+        if disc_bytes != &[0; 8] {
+            msg!("Account already initialized");
+            return Err(ErrorCode::InvalidAccount.into());
+        }
         let sw_dst: &mut [u8] = &mut sw_data;
         let mut sw_crs = Cursor::new(sw_dst);
         sw.try_serialize(&mut sw_crs)?;
@@ -1143,8 +1149,6 @@ pub mod swap_contract {
                 msg!("Inactive merchant approval");
                 return Err(ErrorCode::AccessDenied.into());
             }
-            let spl_token: Pubkey = Pubkey::from_str(SPL_TOKEN).unwrap();
-            let asc_token: Pubkey = Pubkey::from_str(ASC_TOKEN).unwrap();
             let (mrch_token, _bump_seed) = Pubkey::find_program_address(
                 &[
                     mrch_approval.merchant_key.as_ref(),
@@ -1155,7 +1159,7 @@ pub mod swap_contract {
             );
             verify_matching_accounts(acc_inb_token_src.key, &mrch_token, Some(String::from("Invalid merchant associated token")))?;
             merchant_revenue = mrch_approval.revenue;
-            msg!("Atellix: Merchant Revenue: {}", merchant_revenue.to_string());
+            //msg!("Atellix: Merchant Revenue: {}", merchant_revenue.to_string());
         }
 
         let mut oracle_val: f64 = 0.0;
@@ -1178,7 +1182,7 @@ pub mod swap_contract {
                 msg!("Invalid oracle type");
                 return Err(ErrorCode::InternalError.into());
             }
-            msg!("Atellix: Orcl: {}", oracle_val.to_string());
+            //msg!("Atellix: Orcl: {}", oracle_val.to_string());
             let oracle_adj: f64 = oracle_val * base_f.powi(adjust_i);
             oracle_log_val = oracle_adj as u128;
             extra_decimals = base_u.pow(adjust_u);
@@ -1188,7 +1192,7 @@ pub mod swap_contract {
         if sw.oracle_verify { // Check for valid oracle range before proceeding
             let oracle_adj2: f64 = oracle_val * base_f.powi(6);
             let oracle_dcm: u64 = oracle_adj2 as u64;
-            msg!("Atellix: Orcl Verify: {} Min: {} Max: {}", oracle_dcm.to_string(), sw.oracle_verify_min.to_string(), sw.oracle_verify_max.to_string());
+            //msg!("Atellix: Orcl Verify: {} Min: {} Max: {}", oracle_dcm.to_string(), sw.oracle_verify_min.to_string(), sw.oracle_verify_max.to_string());
             if sw.oracle_verify_min > 0 && sw.oracle_verify_min > oracle_dcm {
                 msg!("Oracle result: {} below minimum: {}", oracle_dcm.to_string(), sw.oracle_verify_min.to_string());
                 return Err(ErrorCode::OracleOutOfRange.into());
@@ -1223,7 +1227,7 @@ pub mod swap_contract {
                 }
             }
         }
-        msg!("Atellix: Rates - Swap: {} Base: {}", swap_rate.to_string(), base_rate.to_string());
+        //msg!("Atellix: Rates - Swap: {} Base: {}", swap_rate.to_string(), base_rate.to_string());
         let input_val: u128 = inp_tokens as u128;
         let result: u128 = calculate_swap(sw, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals)?;
         //msg!("Atellix: Result: {}", result.to_string());
@@ -1239,12 +1243,12 @@ pub mod swap_contract {
         }
         let tokens_fee: u64 = calculate_fee(sw, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals)?;
 
-        msg!("Atellix: Inb: {} Out: {}", tokens_inb.to_string(), tokens_out.to_string());
+        /*msg!("Atellix: Inb: {} Out: {}", tokens_inb.to_string(), tokens_out.to_string());
         if sw.fees_inbound {
             msg!("Atellix: Fee Inb: {}", tokens_fee.to_string());
         } else {
             msg!("Atellix: Fee Out: {}", tokens_fee.to_string());
-        }
+        }*/
 
         if sw.merchant_only {
             if tokens_inb > merchant_revenue {
@@ -1265,7 +1269,7 @@ pub mod swap_contract {
             let na_ctx = CpiContext::new_with_signer(na_program.clone(), na_accounts, signer);
             let (_addr, net_nonce) = Pubkey::find_program_address(&[na_program.key.as_ref()], na_program.key);
  
-            msg!("Atellix: Attempt to record revenue withdrawal");
+            //msg!("Atellix: Attempt to record revenue withdrawal");
             net_authority::cpi::record_revenue(na_ctx, net_nonce, false, tokens_inb)?;
         }
 

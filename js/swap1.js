@@ -151,7 +151,7 @@ async function main() {
         tokData1.nonce,
         tokData2.nonce,
         false, // True - Buy, False - Sell
-        new anchor.BN(50 * 1000000),
+        new anchor.BN(500 * 1000000),
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
