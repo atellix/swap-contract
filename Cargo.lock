@@ -732,6 +732,7 @@ name = "net-authority"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "arrayref",
  "byte-slice-cast",
  "bytemuck",
  "decode-account",

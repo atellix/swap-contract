@@ -23,7 +23,11 @@ use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, Slab
 extern crate decode_account;
 use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgradeableLoaderAccountType };
 
-declare_id!("GzVcdUpGYVX9hvR1TxDTiawCM5nGvFQ4nAeXnv2GSFPG");
+declare_id!("7wBWbUGqWLEFr1ackY6chZ2r7yH3dARz6nYdxVGuSMxM");
+
+pub const VERSION_MAJOR: u32 = 1;
+pub const VERSION_MINOR: u32 = 0;
+pub const VERSION_PATCH: u32 = 0;
 
 pub const MAX_RBAC: u32 = 128;
 pub const SPL_TOKEN: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
@@ -347,14 +351,14 @@ pub mod swap_contract {
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let acc_sys = &ctx.accounts.system_program.to_account_info();
         verify_program_owner(ctx.program_id, &acc_prog, &acc_pdat, &acc_user)?;
-        let (data_account_address, bump_seed) = Pubkey::find_program_address(
+        let (root_address, bump_seed) = Pubkey::find_program_address(
             &[ctx.program_id.as_ref()],
             ctx.program_id,
         );
-        if data_account_address != *acc_root.key {
-            msg!("Invalid root data account");
-            return Err(ErrorCode::InvalidDerivedAccount.into());
-        }
+        verify_matching_accounts(&root_address, &ctx.accounts.root_data.to_account_info().key,
+            Some(String::from("Invalid root data account"))
+        )?;
+
         let account_signer_seeds: &[&[_]] = &[
             ctx.program_id.as_ref(),
             &[bump_seed],
@@ -390,6 +394,78 @@ pub mod swap_contract {
         rd.allocate::<CritMapHeader, AnyNode>(DT::UserRBACMap as u16, MAX_RBAC as usize).expect("Failed to allocate");
         rd.allocate::<SlabVec, UserRBAC>(DT::UserRBAC as u16, MAX_RBAC as usize).expect("Failed to allocate");
 
+        Ok(())
+    }
+
+    pub fn store_metadata(ctx: Context<UpdateMetadata>,
+        inp_create: bool,
+        inp_info_size: u64,
+        inp_info_rent: u64,
+        inp_program_name: String,
+        inp_developer_name: String,
+        inp_developer_url: String,
+        inp_source_url: String,
+        inp_verify_url: String,
+    ) -> ProgramResult {
+        let acc_prog = &ctx.accounts.program.to_account_info();
+        let acc_pdat = &ctx.accounts.program_data.to_account_info();
+        let acc_user = &ctx.accounts.program_admin.to_account_info();
+        let acc_info = &ctx.accounts.program_info.to_account_info();
+        let acc_sys = &ctx.accounts.system_program.to_account_info();
+        verify_program_owner(ctx.program_id, &acc_prog, &acc_pdat, &acc_user)?;
+        if inp_create {
+            let (info_address, bump_seed) = Pubkey::find_program_address(
+                &[ctx.program_id.as_ref(), String::from("metadata").as_ref()],
+                ctx.program_id,
+            );
+            verify_matching_accounts(&info_address, &acc_info.key,
+                Some(String::from("Invalid program_info account"))
+            )?;
+            let mdstr = String::from("metadata");
+            let account_signer_seeds: &[&[_]] = &[
+                ctx.program_id.as_ref(),
+                mdstr.as_ref(),
+                &[bump_seed],
+            ];
+            invoke_signed(
+                &system_instruction::create_account(
+                    acc_user.key,
+                    acc_info.key,
+                    inp_info_rent,
+                    inp_info_size,
+                    ctx.program_id
+                ),
+                &[
+                    acc_user.clone(),
+                    acc_info.clone(),
+                    acc_sys.clone(),
+                ],
+                &[account_signer_seeds],
+            )?;
+        }
+        let md = ProgramMetadata {
+            semvar_major: VERSION_MAJOR,
+            semvar_minor: VERSION_MINOR,
+            semvar_patch: VERSION_PATCH,
+            program: *ctx.accounts.program.to_account_info().key,
+            program_name: inp_program_name,
+            developer_name: inp_developer_name,
+            developer_url: inp_developer_url,
+            source_url: inp_source_url,
+            verify_url: inp_verify_url,
+        };
+        let acc_info = &ctx.accounts.program_info.to_account_info();
+        let mut info_data = acc_info.try_borrow_mut_data()?;
+        let info_dst: &mut [u8] = &mut info_data;
+        let mut info_crs = Cursor::new(info_dst);
+        md.try_serialize(&mut info_crs)?;
+        msg!("Program: {}", ctx.accounts.program.key.to_string());
+        msg!("Program Name: {}", md.program_name.as_str());
+        msg!("Version: {}.{}.{}", VERSION_MAJOR.to_string(), VERSION_MINOR.to_string(), VERSION_PATCH.to_string());
+        msg!("Developer Name: {}", md.developer_name.as_str());
+        msg!("Developer URL: {}", md.developer_url.as_str());
+        msg!("Source URL: {}", md.source_url.as_str());
+        msg!("Verify URL: {}", md.verify_url.as_str());
         Ok(())
     }
 
@@ -1390,11 +1466,22 @@ pub struct Initialize<'info> {
     pub root_data: AccountInfo<'info>,
     #[account(mut)]
     pub auth_data: AccountInfo<'info>,
-    //pub net_auth: AccountInfo<'info>, // Merchant validator net authority program
     pub program: AccountInfo<'info>,
     pub program_data: AccountInfo<'info>,
     #[account(signer)]
     pub program_admin: AccountInfo<'info>,
+    #[account(address = system_program::ID)]
+    pub system_program: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateMetadata<'info> {
+    pub program: AccountInfo<'info>,
+    pub program_data: AccountInfo<'info>,
+    #[account(signer)]
+    pub program_admin: AccountInfo<'info>,
+    #[account(mut)]
+    pub program_info: AccountInfo<'info>,
     #[account(address = system_program::ID)]
     pub system_program: AccountInfo<'info>,
 }
@@ -1634,6 +1721,21 @@ pub struct TransferEvent {
     pub new_total: u64,
     pub token_tx: u64,
 }
+
+#[account]
+pub struct ProgramMetadata {
+    pub semvar_major: u32,
+    pub semvar_minor: u32,
+    pub semvar_patch: u32,
+    pub program: Pubkey,
+    pub program_name: String,   // Max len 64
+    pub developer_name: String, // Max len 64
+    pub developer_url: String,  // Max len 128
+    pub source_url: String,     // Max len 128
+    pub verify_url: String,     // Max len 128
+}
+// 8 + (4 * 3) + (4 * 5) + (64 * 2) + (128 * 3) + 32
+// Data length (with discrim): 584 bytes
 
 #[error]
 pub enum ErrorCode {
