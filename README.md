@@ -4,7 +4,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/atellix/swap-contract">
-    <img src="https://media.atellix.net/atellix_token_swap.png" alt="Logo" width="512" height="417"/>
+    <img src="https://media.atellix.net/atellix_token_swap_1.png" alt="Logo" width="300" height="245"/>
   </a>
   <h3 align="center">Atellix Swap</h3>
 </div>
