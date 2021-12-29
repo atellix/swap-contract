@@ -92,7 +92,7 @@ async function main() {
         new anchor.BN(10 ** 4), // swap rate
         new anchor.BN(10 ** 9), // base rate
         feesInbound, // fees on inbound token
-        0, // fees basis points
+        100, // fees basis points
         false, // merchant-only
         {
             accounts: {

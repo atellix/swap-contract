@@ -39,11 +39,12 @@ async function main() {
 
     let res = await swapContract.rpc.updateSwap(
         rootData.nonce,
+        false, // locked / unlocked
         false, // oracle range check
         new anchor.BN(0), // range min
         new anchor.BN(0), // range max
-        new anchor.BN(22971886607),
-        new anchor.BN(10 ** 9), // base rate
+        new anchor.BN(19907120863),
+        new anchor.BN(1), // base rate
         100, // fees basis points
         {
             accounts: {
