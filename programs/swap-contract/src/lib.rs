@@ -23,7 +23,7 @@ use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, Slab
 extern crate decode_account;
 use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgradeableLoaderAccountType };
 
-declare_id!("Gf97c5UqHufTQnimiMRWo7yyh4t6S7q9iKRxf3tBGRF4");
+declare_id!("D9nEPBjZE3zv38NuoRt9SUpZBy4jhX6MJPBPXMbpBsiP");
 
 pub const VERSION_MAJOR: u32 = 1;
 pub const VERSION_MINOR: u32 = 0;
@@ -382,6 +382,7 @@ pub mod swap_contract {
 
         let ra = RootData {
             root_authority: *acc_auth.key,
+            active: true,
         };
         let mut root_data = acc_root.try_borrow_mut_data()?;
         let root_dst: &mut [u8] = &mut root_data;
@@ -881,6 +882,9 @@ pub mod swap_contract {
         let sw = &mut ctx.accounts.swap_data;
         sw.active = inp_active;
 
+        let rt = &mut ctx.accounts.root_data;
+        rt.active = inp_active;
+
         Ok(())
     }
 
@@ -1155,7 +1159,8 @@ pub mod swap_contract {
         let acc_out = &ctx.accounts.out_info.to_account_info();
         let acc_fee = &ctx.accounts.fees_token.to_account_info();
         let sw = &ctx.accounts.swap_data;
-        if ! sw.active {
+        let rt = &ctx.accounts.root_data;
+        if (!sw.active) && (!rt.active) {
             msg!("Inactive swap");
             return Err(ErrorCode::AccessDenied.into());
         }
@@ -1666,11 +1671,20 @@ pub struct TokenInfo {
 #[account]
 pub struct RootData {
     pub root_authority: Pubkey,
+    pub active: bool,
 }
 
 impl RootData {
+    pub fn active(&self) -> bool {
+        self.active
+    }
+
     pub fn root_authority(&self) -> Pubkey {
         self.root_authority
+    }
+
+    pub fn set_active(&mut self, new_active: bool) {
+        self.active = new_active
     }
 
     pub fn set_root_authority(&mut self, new_authority: Pubkey) {
@@ -1682,6 +1696,7 @@ impl Default for RootData {
     fn default() -> Self {
         Self {
             root_authority: Pubkey::default(),
+            active: true,
         }
     }
 }
