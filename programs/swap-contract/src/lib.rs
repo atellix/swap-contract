@@ -23,7 +23,7 @@ use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, Slab
 extern crate decode_account;
 use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgradeableLoaderAccountType };
 
-declare_id!("D9nEPBjZE3zv38NuoRt9SUpZBy4jhX6MJPBPXMbpBsiP");
+declare_id!("SWAPHoyLAfhNa77PnnnNWWWDLPHuSJueuqveVL52sNS");
 
 pub const VERSION_MAJOR: u32 = 1;
 pub const VERSION_MINOR: u32 = 0;
@@ -854,6 +854,7 @@ pub mod swap_contract {
     pub fn update_swap_active(ctx: Context<UpdateSwap>,
         inp_root_nonce: u8,         // RootData nonce
         inp_active: bool,           // Active flag
+        inp_global: bool,           // Global setting
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // SwapAbort or SwapAdmin role
         let acc_root = &ctx.accounts.root_data.to_account_info();
@@ -882,8 +883,10 @@ pub mod swap_contract {
         let sw = &mut ctx.accounts.swap_data;
         sw.active = inp_active;
 
-        let rt = &mut ctx.accounts.root_data;
-        rt.active = inp_active;
+        if inp_global {
+            let rt = &mut ctx.accounts.root_data;
+            rt.active = inp_active;
+        }
 
         Ok(())
     }
@@ -1160,7 +1163,7 @@ pub mod swap_contract {
         let acc_fee = &ctx.accounts.fees_token.to_account_info();
         let sw = &ctx.accounts.swap_data;
         let rt = &ctx.accounts.root_data;
-        if (!sw.active) && (!rt.active) {
+        if !(sw.active && rt.active) {
             msg!("Inactive swap");
             return Err(ErrorCode::AccessDenied.into());
         }

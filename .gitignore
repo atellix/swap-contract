@@ -8,3 +8,5 @@ js/node_modules/*
 js/swap.json
 js/data-*.json
 js/json/*
+js/conf/*.yml
+js/conf/*.json
