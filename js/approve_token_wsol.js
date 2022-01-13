@@ -17,10 +17,10 @@ const swapContract = anchor.workspace.SwapContract
 const swapContractPK = swapContract.programId
 
 async function main() {
+    const netKeys = await jsonFileRead('../../data/export/network_keys.json')
     const netData = await jsonFileRead('../../data/net.json')
 
     const rootData = await programAddress([swapContractPK.toBuffer()], swapContractPK)
-
     const tkiBytes = swapContract.account.tokenInfo.size
     const tkiRent = await provider.connection.getMinimumBalanceForRentExemption(tkiBytes)
 
@@ -32,23 +32,21 @@ async function main() {
 
     const swapCache = await jsonFileRead('../../data/swap.json')
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
-    swapAdmin1 = importSecretKey(swapCache.swapAdmin1_secret)
+    swapAdmin1 = importSecretKey(netKeys['swap-data-admin-1-secret'])
 
     const tkiData = await programAddress([tokenMint.toBuffer()], swapContractPK)
     const tokData = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint)
 
-    if (true) {
-        console.log('Fund Swap Admin')
-        var tx = new anchor.web3.Transaction()
-        tx.add(
-            anchor.web3.SystemProgram.transfer({
-                fromPubkey: provider.wallet.publicKey,
-                toPubkey: swapAdmin1.publicKey,
-                lamports: (tkiRent + await provider.connection.getMinimumBalanceForRentExemption(165)) * 2,
-            })
-        )
-        await provider.send(tx)
-    }
+    console.log('Fund Swap Admin')
+    var tx = new anchor.web3.Transaction()
+    tx.add(
+        anchor.web3.SystemProgram.transfer({
+            fromPubkey: provider.wallet.publicKey,
+            toPubkey: swapAdmin1.publicKey,
+            lamports: (tkiRent + await provider.connection.getMinimumBalanceForRentExemption(165)),
+        })
+    )
+    await provider.send(tx)
 
     console.log('Approve Token: ' + tokenMint.toString())
     await swapContract.rpc.approveToken(

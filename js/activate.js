@@ -8,7 +8,7 @@ const exec = promisify(require('child_process').exec)
 const fs = require('fs').promises
 const base32 = require("base32.js")
 const anchor = require('@project-serum/anchor')
-const { associatedTokenAddress, programAddress, exportSecretKey, jsonFileRead, jsonFileWrite } = require('../../js/atellix-common')
+const { associatedTokenAddress, programAddress, importSecretKey, exportSecretKey, jsonFileRead, jsonFileWrite } = require('../../js/atellix-common')
 
 const provider = anchor.Provider.env()
 //const provider = anchor.Provider.local()
@@ -19,6 +19,7 @@ const swapContractPK = swapContract.programId
 console.log("User: " + provider.wallet.publicKey.toString())
 
 async function main() {
+    const netKeys = await jsonFileRead('../../data/export/network_keys.json')
     const netData = await jsonFileRead('../../data/net.json')
     var writeData = {}
     writeData['swapContractProgram'] = swapContractPK.toString()
@@ -40,149 +41,167 @@ async function main() {
     const authBytes = 130 + (16384 * 2)
     const authRent = await provider.connection.getMinimumBalanceForRentExemption(authBytes)
 
-    const swapBytes = swapContract.account.swapData.size
-    const swapRent = await provider.connection.getMinimumBalanceForRentExemption(swapBytes)
-
-    var swapData
-    var swapDataPK
     var authData
     var authDataPK
-    var swapAdmin1
-    var swapDeposit1
-    var swapWithdraw1
 
-    if (true) {
-        authData = anchor.web3.Keypair.generate()
-        authDataPK = authData.publicKey
-        writeData['swapContractRBAC'] = authData.publicKey.toString()
+    authData = anchor.web3.Keypair.generate()
+    authDataPK = authData.publicKey
+    writeData['swapContractRBAC'] = authData.publicKey.toString()
 
-        swapAdmin1 = anchor.web3.Keypair.generate()
-        writeData['swapAdmin1'] = swapAdmin1.publicKey.toString()
-        writeData['swapAdmin1_secret'] = exportSecretKey(swapAdmin1)
+    writeData['swapRoot1'] = netKeys['swap-network-admin-1-public']
+    writeData['swapAdmin1'] = netKeys['swap-data-admin-1-public']
+    writeData['swapDeposit1'] = netKeys['swap-deposit-1-public']
+    writeData['swapWithdraw1'] = netKeys['swap-withdraw-1-public']
+    writeData['swapUpdate1'] = netKeys['swap-update-1-public']
+    writeData['swapAbort1'] = netKeys['swap-abort-1-public']
+    writeData['swapFees1'] = netKeys['swap-fees-1-public']
 
-        swapDeposit1 = anchor.web3.Keypair.generate()
-        writeData['swapDeposit1'] = swapDeposit1.publicKey.toString()
-        writeData['swapDeposit1_secret'] = exportSecretKey(swapDeposit1)
+    swapAbort2 = importSecretKey(netKeys['swap-abort-2-secret'])
+    writeData['swapAbort2'] = swapAbort2.publicKey.toString()
+    writeData['swapAbort2_secret'] = netKeys['swap-abort-2-secret']
 
-        swapWithdraw1 = anchor.web3.Keypair.generate()
-        writeData['swapWithdraw1'] = swapWithdraw1.publicKey.toString()
-        writeData['swapWithdraw1_secret'] = exportSecretKey(swapWithdraw1)
+    console.log('Create RBAC Account')
+    const tx = new anchor.web3.Transaction()
+    tx.add(
+        anchor.web3.SystemProgram.createAccount({
+            fromPubkey: provider.wallet.publicKey,
+            newAccountPubkey: authData.publicKey,
+            space: authBytes,
+            lamports: authRent,
+            programId: swapContractPK,
+        })
+    )
+    console.log(await provider.send(tx, [authData]))
 
-        if (true) {
-            const tx = new anchor.web3.Transaction()
-            tx.add(
-                anchor.web3.SystemProgram.createAccount({
-                    fromPubkey: provider.wallet.publicKey,
-                    newAccountPubkey: authData.publicKey,
-                    space: authBytes,
-                    lamports: authRent,
-                    programId: swapContractPK,
-                })
-            )
-            await provider.send(tx, [authData])
+    console.log('Initialize')
+    await swapContract.rpc.initialize(
+        new anchor.BN(rootBytes),
+        new anchor.BN(rootRent),
+        {
+            accounts: {
+                program: swapContractPK,
+                programAdmin: provider.wallet.publicKey,
+                programData: new PublicKey(programData),
+                rootData: new PublicKey(rootData.pubkey),
+                authData: authData.publicKey,
+                systemProgram: SystemProgram.programId,
+            }
         }
+     )
 
-        console.log('Initialize')
-        await swapContract.rpc.initialize(
-            new anchor.BN(rootBytes),
-            new anchor.BN(rootRent),
-            {
-                accounts: {
-                    program: swapContractPK,
-                    programAdmin: provider.wallet.publicKey,
-                    programData: new PublicKey(programData),
-                    rootData: new PublicKey(rootData.pubkey),
-                    authData: authData.publicKey,
-                    systemProgram: SystemProgram.programId,
-                }
-            }
-        )
+    console.log('Grant: Swap Network Admin 1')
+    await swapContract.rpc.grant(
+        rootData.nonce,
+        0, // NetworkAdmin
+        {
+            accounts: {
+                program: swapContractPK,
+                programAdmin: provider.wallet.publicKey,
+                programData: new PublicKey(programData),
+                rootData: new PublicKey(rootData.pubkey),
+                authData: authData.publicKey,
+                rbacUser: new PublicKey(writeData['swapRoot1']),
+            },
+        }
+    )
 
-        console.log('Grant: Swap Admin 1')
-        await swapContract.rpc.grant(
-            rootData.nonce,
-            2, // SwapAdmin
-            {
-                accounts: {
-                    program: swapContractPK,
-                    programAdmin: provider.wallet.publicKey,
-                    programData: new PublicKey(programData),
-                    rootData: new PublicKey(rootData.pubkey),
-                    authData: authData.publicKey,
-                    rbacUser: swapAdmin1.publicKey,
-                },
-            }
-        )
+    console.log('Grant: Swap Data Admin 1')
+    await swapContract.rpc.grant(
+        rootData.nonce,
+        2, // SwapAdmin
+        {
+            accounts: {
+                program: swapContractPK,
+                programAdmin: provider.wallet.publicKey,
+                programData: new PublicKey(programData),
+                rootData: new PublicKey(rootData.pubkey),
+                authData: authData.publicKey,
+                rbacUser: new PublicKey(writeData['swapAdmin1']),
+            },
+        }
+    )
 
-        console.log('Grant: Swap Deposit 1')
-        await swapContract.rpc.grant(
-            rootData.nonce,
-            3, // SwapDeposit
-            {
-                accounts: {
-                    program: swapContractPK,
-                    programAdmin: provider.wallet.publicKey,
-                    programData: new PublicKey(programData),
-                    rootData: new PublicKey(rootData.pubkey),
-                    authData: authData.publicKey,
-                    rbacUser: swapDeposit1.publicKey,
-                },
-            }
-        )
+    console.log('Grant: Swap Deposit 1')
+    await swapContract.rpc.grant(
+        rootData.nonce,
+        3, // SwapDeposit
+        {
+            accounts: {
+                program: swapContractPK,
+                programAdmin: provider.wallet.publicKey,
+                programData: new PublicKey(programData),
+                rootData: new PublicKey(rootData.pubkey),
+                authData: authData.publicKey,
+                rbacUser: new PublicKey(writeData['swapDeposit1']),
+            },
+        }
+    )
 
-        console.log('Grant: Swap Withdraw 1')
-        await swapContract.rpc.grant(
-            rootData.nonce,
-            4, // SwapWithdraw
-            {
-                accounts: {
-                    program: swapContractPK,
-                    programAdmin: provider.wallet.publicKey,
-                    programData: new PublicKey(programData),
-                    rootData: new PublicKey(rootData.pubkey),
-                    authData: authData.publicKey,
-                    rbacUser: swapWithdraw1.publicKey,
-                },
-            }
-        )
+    console.log('Grant: Swap Withdraw 1')
+    await swapContract.rpc.grant(
+        rootData.nonce,
+        4, // SwapWithdraw
+        {
+            accounts: {
+                program: swapContractPK,
+                programAdmin: provider.wallet.publicKey,
+                programData: new PublicKey(programData),
+                rootData: new PublicKey(rootData.pubkey),
+                authData: authData.publicKey,
+                rbacUser: new PublicKey(writeData['swapWithdraw1']),
+            },
+        }
+    )
 
-        console.log('Grant: Swap Update 1 (to swapAdmin1)')
-        await swapContract.rpc.grant(
-            rootData.nonce,
-            5, // SwapUpdate
-            {
-                accounts: {
-                    program: swapContractPK,
-                    programAdmin: provider.wallet.publicKey,
-                    programData: new PublicKey(programData),
-                    rootData: new PublicKey(rootData.pubkey),
-                    authData: authData.publicKey,
-                    rbacUser: swapAdmin1.publicKey,
-                },
-            }
-        )
+    console.log('Grant: Swap Update 1')
+    await swapContract.rpc.grant(
+        rootData.nonce,
+        5, // SwapUpdate
+        {
+            accounts: {
+                program: swapContractPK,
+                programAdmin: provider.wallet.publicKey,
+                programData: new PublicKey(programData),
+                rootData: new PublicKey(rootData.pubkey),
+                authData: authData.publicKey,
+                rbacUser: new PublicKey(writeData['swapUpdate1']),
+            },
+        }
+    )
 
-        await jsonFileWrite('../../data/swap.json', writeData)
-    } else {
-        const swapCache = await jsonFileRead('../../data/swap.json')
-        authDataPK = new PublicKey(swapCache.swapContractRBAC)
-        swapAdmin1 = importSecretKey(swapCache.swapAdmin1_secret)
-        swapDeposit1 = importSecretKey(swapCache.swapDeposit1_secret)
-        swapWithdraw1 = importSecretKey(swapCache.swapWithdraw1_secret)
-    }
+    console.log('Grant: Swap Abort 1')
+    await swapContract.rpc.grant(
+        rootData.nonce,
+        6, // SwapAbort
+        {
+            accounts: {
+                program: swapContractPK,
+                programAdmin: provider.wallet.publicKey,
+                programData: new PublicKey(programData),
+                rootData: new PublicKey(rootData.pubkey),
+                authData: authData.publicKey,
+                rbacUser: new PublicKey(writeData['swapAbort1']),
+            },
+        }
+    )
 
-    if (true) {
-        console.log('Fund Swap Admin')
-        var tx = new anchor.web3.Transaction()
-        tx.add(
-            anchor.web3.SystemProgram.transfer({
-                fromPubkey: provider.wallet.publicKey,
-                toPubkey: swapAdmin1.publicKey,
-                lamports: (tkiRent + await provider.connection.getMinimumBalanceForRentExemption(165)) * 2,
-            })
-        )
-        await provider.send(tx)
-    }
+    console.log('Grant: Swap Abort 2')
+    await swapContract.rpc.grant(
+        rootData.nonce,
+        6, // SwapAbort
+        {
+            accounts: {
+                program: swapContractPK,
+                programAdmin: provider.wallet.publicKey,
+                programData: new PublicKey(programData),
+                rootData: new PublicKey(rootData.pubkey),
+                authData: authData.publicKey,
+                rbacUser: new PublicKey(writeData['swapAbort2']),
+            },
+        }
+    )
+
+    await jsonFileWrite('../../data/swap.json', writeData)
 }
 
 console.log('Begin')

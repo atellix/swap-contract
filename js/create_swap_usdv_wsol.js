@@ -17,9 +17,10 @@ const swapContract = anchor.workspace.SwapContract
 const swapContractPK = swapContract.programId
 
 async function main() {
+    const netKeys = await jsonFileRead('../../data/export/network_keys.json')
     const netData = await jsonFileRead('../../data/net.json')
     const rootData = await programAddress([swapContractPK.toBuffer()], swapContractPK)
-    const feesOwner = anchor.web3.Keypair.generate()
+    const feesOwner = new PublicKey(netKeys['swap-fees-1-public'])
     const swapBytes = swapContract.account.swapData.size
     const swapRent = await provider.connection.getMinimumBalanceForRentExemption(swapBytes)
 
@@ -31,7 +32,7 @@ async function main() {
 
     const swapCache = await jsonFileRead('../../data/swap.json')
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
-    swapAdmin1 = importSecretKey(swapCache.swapAdmin1_secret)
+    swapAdmin1 = importSecretKey(netKeys['swap-data-admin-1-secret'])
 
     var writeData = {}
 
@@ -52,33 +53,30 @@ async function main() {
     var feesInbound = true
     var feesToken
     if (feesInbound) {
-        feesToken = await associatedTokenAddress(feesOwner.publicKey, tokenMint1)
+        feesToken = await associatedTokenAddress(feesOwner, tokenMint1)
     } else {
-        feesToken = await associatedTokenAddress(feesOwner.publicKey, tokenMint2)
+        feesToken = await associatedTokenAddress(feesOwner, tokenMint2)
     }
 
     swapData = anchor.web3.Keypair.generate()
     swapDataPK = swapData.publicKey
     writeData['swapData'] = swapData.publicKey.toString()
-    writeData['feesOwner'] = feesOwner.publicKey.toString()
-    writeData['feesOwner_secret'] = exportSecretKey(feesOwner)
+    writeData['feesOwner'] = feesOwner.toString()
     writeData['feesToken'] = feesToken.pubkey
 
     console.log('Create Swap')
 
-    if (true) {
-        const tx = new anchor.web3.Transaction()
-        tx.add(
-            anchor.web3.SystemProgram.createAccount({
-                fromPubkey: provider.wallet.publicKey,
-                newAccountPubkey: swapDataPK,
-                space: swapBytes,
-                lamports: swapRent,
-                programId: swapContractPK,
-            })
-        )
-        await provider.send(tx, [swapData])
-    }
+    const tx = new anchor.web3.Transaction()
+    tx.add(
+        anchor.web3.SystemProgram.createAccount({
+            fromPubkey: provider.wallet.publicKey,
+            newAccountPubkey: swapDataPK,
+            space: swapBytes,
+            lamports: swapRent,
+            programId: swapContractPK,
+        })
+    )
+    await provider.send(tx, [swapData])
 
     let res = await swapContract.rpc.createSwap(
         rootData.nonce,
