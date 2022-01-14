@@ -32,22 +32,6 @@ async function programAddress(inputs, program = swapContractPK) {
     return res
 }
 
-function exportSecretKey(keyPair) {
-    var enc = new base32.Encoder({ type: "crockford", lc: true })
-    return enc.write(keyPair.secretKey).finalize()
-}
-
-function importSecretKey(keyStr) {
-    var dec = new base32.Decoder({ type: "crockford" })
-    var spec = dec.write(keyStr).finalize()
-    return Keypair.fromSecretKey(new Uint8Array(spec))
-}
-
-async function createTokenMint() {
-    var res = await exec('/Users/mfrager/Build/solana/swap-contract/create_mint.sh')
-    return res.stdout
-}
-
 function sleep(millis) {
   return new Promise(resolve => setTimeout(resolve, millis));
 }
@@ -85,9 +69,6 @@ async function main() {
     var swapDataPK
     var authData
     var authDataPK
-    var swapAdmin1
-    var swapDeposit1
-    var swapWithdraw1
 
     var spjs
     try {
@@ -110,9 +91,6 @@ async function main() {
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
     swapDataPK = new PublicKey(swapSpec.swapData)
     feesTK = new PublicKey(swapSpec.feesToken)
-    swapAdmin1 = importSecretKey(swapCache.swapAdmin1_secret)
-    swapDeposit1 = importSecretKey(swapCache.swapDeposit1_secret)
-    swapWithdraw1 = importSecretKey(swapCache.swapWithdraw1_secret)
 
     const tkiData1 = await programAddress([tokenMint1.toBuffer()])
     const tkiData2 = await programAddress([tokenMint2.toBuffer()])
