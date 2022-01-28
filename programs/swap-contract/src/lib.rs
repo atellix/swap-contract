@@ -1216,6 +1216,7 @@ pub mod swap_contract {
         // Verify merchant approval for merchant swaps
         let mut merchant_revenue: u64 = 0;
         let mut merchant_offset: usize = 0;
+        let mut merchant_tx_id: u64 = 0;
         if sw.merchant_only {
             msg!("Merchant-only Swap");
             if sw.oracle_rates || sw.oracle_verify {
@@ -1355,6 +1356,12 @@ pub mod swap_contract {
  
             //msg!("Atellix: Attempt to record revenue withdrawal");
             net_authority::cpi::record_revenue(na_ctx, net_nonce, false, tokens_inb)?;
+
+            // Reload data after CPI call
+            let acc_mrch_approval = ctx.remaining_accounts.get(merchant_offset).unwrap();
+            let mut aprv_data: &[u8] = &acc_mrch_approval.try_borrow_data()?;
+            let mrch_approval = MerchantApproval::try_deserialize(&mut aprv_data)?;
+            merchant_tx_id = mrch_approval.tx_count;
         }
 
         //msg!("Atellix: Available Outbound Tokens: {}", out_info.amount.to_string());
@@ -1462,6 +1469,7 @@ pub mod swap_contract {
             swap_tx: ctx.accounts.swap_data.swap_tx_count,
             inb_token_tx: ctx.accounts.inb_info.token_tx_count,
             out_token_tx: ctx.accounts.out_info.token_tx_count,
+            merchant_tx_id: merchant_tx_id,
         });
 
         Ok(())
@@ -1724,6 +1732,7 @@ pub struct SwapEvent {
     pub swap_tx: u64,
     pub inb_token_tx: u64,
     pub out_token_tx: u64,
+    pub merchant_tx_id: u64,
 }
 
 #[event]
