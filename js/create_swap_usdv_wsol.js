@@ -45,8 +45,8 @@ async function main() {
     writeData['tokenMint1'] = tokenMint1.toString()
     writeData['tokenMint2'] = tokenMint2.toString()
     
-    const tkiData1 = await programAddress([tokenMint1.toBuffer()], swapContractPK)
-    const tkiData2 = await programAddress([tokenMint2.toBuffer()], swapContractPK)
+    const tkiData1 = await programAddress([tokenMint1.toBuffer(), tokenMint2.toBuffer()], swapContractPK)
+    const tkiData2 = await programAddress([tokenMint2.toBuffer(), tokenMint1.toBuffer()], swapContractPK)
     const tokData1 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint1)
     const tokData2 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint2)
 
@@ -80,6 +80,8 @@ async function main() {
 
     let res = await swapContract.rpc.createSwap(
         rootData.nonce,
+        false, // basis rates
+        false, // basis inbound
         true, // use oracle
         false, // oracle max
         false, // inverse oracle

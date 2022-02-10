@@ -92,8 +92,8 @@ async function main() {
     swapDataPK = new PublicKey(swapSpec.swapData)
     feesTK = new PublicKey(swapSpec.feesToken)
 
-    const tkiData1 = await programAddress([tokenMint1.toBuffer()])
-    const tkiData2 = await programAddress([tokenMint2.toBuffer()])
+    const tkiData1 = await programAddress([tokenMint1.toBuffer(), tokenMint2.toBuffer()])
+    const tkiData2 = await programAddress([tokenMint2.toBuffer(), tokenMint1.toBuffer()])
     const tokData1 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint1)
     const tokData2 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint2)
 

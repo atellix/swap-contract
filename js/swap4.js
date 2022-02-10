@@ -55,7 +55,7 @@ function sleep(millis) {
 async function main() {
     var ndjs
     try {
-        ndjs = await fs.readFile('/Users/mfrager/Build/solana/net-authority/js/net.json')
+        ndjs = await fs.readFile('../../data/net.json')
     } catch (error) {
         console.error('File Error: ', error)
     }
@@ -91,7 +91,7 @@ async function main() {
 
     var spjs
     try {
-        spjs = await fs.readFile('/Users/mfrager/Build/solana/swap-contract/js/swap.json')
+        spjs = await fs.readFile('../../data/swap.json')
     } catch (error) {
         console.error('File Error: ', error)
     }
@@ -99,7 +99,7 @@ async function main() {
 
     var djs
     try {
-        djs = await fs.readFile('/Users/mfrager/Build/solana/swap-contract/js/json/data-wsol-usdv.json')
+        djs = await fs.readFile('../../data/swap-wsol-usdv.json')
     } catch (error) {
         console.error('File Error: ', error)
     }
@@ -110,12 +110,9 @@ async function main() {
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
     swapDataPK = new PublicKey(swapSpec.swapData)
     feesTK = new PublicKey(swapSpec.feesToken)
-    swapAdmin1 = importSecretKey(swapCache.swapAdmin1_secret)
-    swapDeposit1 = importSecretKey(swapCache.swapDeposit1_secret)
-    swapWithdraw1 = importSecretKey(swapCache.swapWithdraw1_secret)
 
-    const tkiData1 = await programAddress([tokenMint1.toBuffer()])
-    const tkiData2 = await programAddress([tokenMint2.toBuffer()])
+    const tkiData1 = await programAddress([tokenMint1.toBuffer(), tokenMint2.toBuffer()])
+    const tkiData2 = await programAddress([tokenMint2.toBuffer(), tokenMint1.toBuffer()])
     const tokData1 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint1)
     const tokData2 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint2)
 

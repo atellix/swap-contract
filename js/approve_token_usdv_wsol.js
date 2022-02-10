@@ -8,7 +8,7 @@ const exec = promisify(require('child_process').exec)
 const fs = require('fs').promises
 const base32 = require("base32.js")
 const anchor = require('@project-serum/anchor')
-const { associatedTokenAddress, programAddress, importSecretKey, exportSecretKey, jsonFileRead, jsonFileWrite } = require('../../js/atellix-common')
+const { SPL_ASSOCIATED_TOKEN, associatedTokenAddress, programAddress, importSecretKey, jsonFileRead } = require('../../js/atellix-common')
 
 const provider = anchor.Provider.env()
 //const provider = anchor.Provider.local()
@@ -19,49 +19,63 @@ const swapContractPK = swapContract.programId
 async function main() {
     const netKeys = await jsonFileRead('../../data/export/network_keys.json')
     const netData = await jsonFileRead('../../data/net.json')
+
     const rootData = await programAddress([swapContractPK.toBuffer()], swapContractPK)
     const tkiBytes = swapContract.account.tokenInfo.size
     const tkiRent = await provider.connection.getMinimumBalanceForRentExemption(tkiBytes)
 
-    var authData
-    var authDataPK
-    var swapDepost1
     var tokenMint = new PublicKey(netData.tokenMintUSDV)
     var pairMint = new PublicKey('So11111111111111111111111111111111111111112')
+    var createAta = false
+    var tokenDecimals = 4
+    var authData
+    var authDataPK
+    var swapAdmin1
 
     const swapCache = await jsonFileRead('../../data/swap.json')
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
-    swapDeposit1 = importSecretKey(netKeys['swap-deposit-1-secret'])
-    treasury1 = importSecretKey(netKeys['treasury-1-secret'])
+    swapAdmin1 = importSecretKey(netKeys['swap-data-admin-1-secret'])
 
     const tkiData = await programAddress([tokenMint.toBuffer(), pairMint.toBuffer()], swapContractPK)
     const tokData = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint)
-    const srcToken = await associatedTokenAddress(treasury1.publicKey, tokenMint)
 
-    console.log('Token Info: ' + tkiData.pubkey)
-    console.log('Deposit: ' + tokData.pubkey)
-    let res = await swapContract.rpc.deposit(
+    console.log('Fund Swap Admin')
+    var tx = new anchor.web3.Transaction()
+    tx.add(
+        anchor.web3.SystemProgram.transfer({
+            fromPubkey: provider.wallet.publicKey,
+            toPubkey: swapAdmin1.publicKey,
+            lamports: (tkiRent + await provider.connection.getMinimumBalanceForRentExemption(165)),
+        })
+    )
+    await provider.send(tx)
+
+    console.log('Approve Token: ' + tokenMint.toString())
+    await swapContract.rpc.approveToken(
         rootData.nonce,
         tkiData.nonce,
         tokData.nonce,
-        new anchor.BN('100000000000'), // Ten million (* 10000)
+        new anchor.BN(tkiRent),
+        new anchor.BN(tkiBytes),
+        tokenDecimals,
+        createAta,
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
                 authData: authDataPK,
-                swapAdmin: swapDeposit1.publicKey,
+                swapAdmin: swapAdmin1.publicKey,
                 swapToken: new PublicKey(tokData.pubkey),
-                tokenAdmin: treasury1.publicKey,
                 tokenMint: tokenMint,
                 pairMint: pairMint,
-                tokenSrc: new PublicKey(srcToken.pubkey),
                 tokenInfo: new PublicKey(tkiData.pubkey),
                 tokenProgram: TOKEN_PROGRAM_ID,
+                ascProgram: SPL_ASSOCIATED_TOKEN,
+                systemProgram: SystemProgram.programId,
+                systemRent: SYSVAR_RENT_PUBKEY,
             },
-            signers: [swapDeposit1, treasury1],
+            signers: [swapAdmin1],
         }
     )
-    console.log(res)
 }
 
 console.log('Begin')

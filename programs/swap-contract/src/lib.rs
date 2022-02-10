@@ -597,11 +597,13 @@ pub mod swap_contract {
         inp_tinf_rent: u64,         // Token Info rent
         inp_tinf_size: u64,         // Token Info size
         inp_decimals: u8,           // Token decimals
+        inp_create_ata: bool,       // Create Associated Token Account
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
         let acc_root = &ctx.accounts.root_data.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let acc_mint = &ctx.accounts.token_mint.to_account_info();
+        let acc_pair = &ctx.accounts.pair_mint.to_account_info();
         let acc_info = &ctx.accounts.token_info.to_account_info();
         let acc_prog = &ctx.accounts.token_program.to_account_info();
         let acc_asct = &ctx.accounts.asc_program.to_account_info();
@@ -621,7 +623,7 @@ pub mod swap_contract {
             return Err(ErrorCode::AccessDenied.into());
         }
 
-        let acc_tinf_expected = Pubkey::create_program_address(&[acc_mint.key.as_ref(), &[inp_tinf_nonce]], ctx.program_id)
+        let acc_tinf_expected = Pubkey::create_program_address(&[acc_mint.key.as_ref(), acc_pair.key.as_ref(), &[inp_tinf_nonce]], ctx.program_id)
             .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
         verify_matching_accounts(acc_info.key, &acc_tinf_expected, Some(String::from("Invalid token info")))?;
 
@@ -647,37 +649,40 @@ pub mod swap_contract {
             return Err(ErrorCode::InvalidAccount.into());
         }
 
-        // Fund associated token account
-        msg!("Atellix: Create associated token account");
-        let instr = Instruction {
-            program_id: asc_token,
-            accounts: vec![
-                AccountMeta::new(*acc_admn.key, true),
-                AccountMeta::new(*acc_tokn.key, false),
-                AccountMeta::new_readonly(*acc_root.key, false),
-                AccountMeta::new_readonly(*acc_mint.key, false),
-                AccountMeta::new_readonly(solana_program::system_program::id(), false),
-                AccountMeta::new_readonly(spl_token, false),
-                AccountMeta::new_readonly(sysvar::rent::id(), false),
-            ],
-            data: vec![],
-        };
-        invoke(
-            &instr,
-            &[
-                acc_admn.clone(),
-                acc_tokn.clone(),
-                acc_root.clone(),
-                acc_mint.clone(),
-                acc_sys.clone(),
-                acc_prog.clone(),
-                acc_rent.clone(),
-            ]
-        )?;
+        if inp_create_ata {
+            // Fund associated token account
+            msg!("Atellix: Create associated token account");
+            let instr = Instruction {
+                program_id: asc_token,
+                accounts: vec![
+                    AccountMeta::new(*acc_admn.key, true),
+                    AccountMeta::new(*acc_tokn.key, false),
+                    AccountMeta::new_readonly(*acc_root.key, false),
+                    AccountMeta::new_readonly(*acc_mint.key, false),
+                    AccountMeta::new_readonly(solana_program::system_program::id(), false),
+                    AccountMeta::new_readonly(spl_token, false),
+                    AccountMeta::new_readonly(sysvar::rent::id(), false),
+                ],
+                data: vec![],
+            };
+            invoke(
+                &instr,
+                &[
+                    acc_admn.clone(),
+                    acc_tokn.clone(),
+                    acc_root.clone(),
+                    acc_mint.clone(),
+                    acc_sys.clone(),
+                    acc_prog.clone(),
+                    acc_rent.clone(),
+                ]
+            )?;
+        }
 
         msg!("Atellix: Create token info account");
         let account_signer_seeds: &[&[_]] = &[
             acc_mint.key.as_ref(),
+            acc_pair.key.as_ref(),
             &[inp_tinf_nonce],
         ];
         invoke_signed(
@@ -698,11 +703,16 @@ pub mod swap_contract {
 
         let clock = Clock::get()?;
         let ra = TokenInfo {
-            mint: *acc_mint.key,
-            decimals: inp_decimals,
-            amount: 0,
-            token_tx_count: 0,
             slot: clock.slot,
+            mint: *acc_mint.key,
+            pair_mint: *acc_pair.key,
+            amount: 0,
+            decimals: inp_decimals,
+            token_tx_count: 0,
+            tokens_outstanding: 0,
+            tokens_offset: 0,
+            cost_basis: 0,
+            cost_offset: 0,
         };
         let mut tk_data = acc_info.try_borrow_mut_data()?;
         let tk_dst: &mut [u8] = &mut tk_data;
@@ -714,6 +724,8 @@ pub mod swap_contract {
 
     pub fn create_swap(ctx: Context<CreateSwap>,
         inp_root_nonce: u8,         // RootData nonce
+        inp_basis_rates: bool,      // Use cost-basis for swap rates
+        inp_basis_inbound: bool,    // Store cost-basis on inbound token info (otherwise use outbound token info)
         inp_oracle_rates: bool,     // Use oracle for swap rates
         inp_oracle_max: bool,       // Use oracle if greater
         inp_oracle_inverse: bool,   // Inverse the oracle for "Buy" orders
@@ -751,6 +763,16 @@ pub mod swap_contract {
             return Err(ErrorCode::InvalidParameters.into());
         }
 
+        if ctx.accounts.inb_info.mint != ctx.accounts.out_info.pair_mint {
+            msg!("Inbound mint does not match outbound pair mint in token info");
+            return Err(ErrorCode::InvalidParameters.into());
+        }
+
+        if ctx.accounts.out_info.mint != ctx.accounts.inb_info.pair_mint {
+            msg!("Outbound mint does not match inbound pair mint in token info");
+            return Err(ErrorCode::InvalidParameters.into());
+        }
+
         OracleType::try_from(inp_oracle_type).map_err(|_| {
             msg!("Invalid oracle type");
             ErrorCode::InvalidParameters
@@ -767,6 +789,8 @@ pub mod swap_contract {
             locked: false,
             slot: clock.slot,
             merchant_only: inp_merchant_only,
+            basis_inbound: inp_basis_inbound,
+            basis_rates: inp_basis_rates,
             oracle_data: oracle,
             oracle_type: inp_oracle_type,
             oracle_rates: inp_oracle_rates,
@@ -903,6 +927,7 @@ pub mod swap_contract {
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let acc_info = &ctx.accounts.token_info.to_account_info();
         let acc_mint = &ctx.accounts.token_mint.to_account_info();
+        let acc_pair = &ctx.accounts.pair_mint.to_account_info();
         let acc_prog = &ctx.accounts.token_program.to_account_info();
         let acc_tokn = &ctx.accounts.swap_token.to_account_info();
         
@@ -917,7 +942,7 @@ pub mod swap_contract {
             msg!("No swap deposit role");
             return Err(ErrorCode::AccessDenied.into());
         }
-        let acc_tinf_expected = Pubkey::create_program_address(&[acc_mint.key.as_ref(), &[inp_tinf_nonce]], ctx.program_id)
+        let acc_tinf_expected = Pubkey::create_program_address(&[acc_mint.key.as_ref(), acc_pair.key.as_ref(), &[inp_tinf_nonce]], ctx.program_id)
             .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
         verify_matching_accounts(acc_info.key, &acc_tinf_expected, Some(String::from("Invalid token info")))?;
         verify_matching_accounts(acc_mint.key, &ctx.accounts.token_info.mint, Some(String::from("Invalid token mint")))?;
@@ -984,6 +1009,7 @@ pub mod swap_contract {
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let acc_info = &ctx.accounts.token_info.to_account_info();
         let acc_mint = &ctx.accounts.token_mint.to_account_info();
+        let acc_pair = &ctx.accounts.pair_mint.to_account_info();
         let acc_tsrc = &ctx.accounts.token_src.to_account_info();
         let acc_prog = &ctx.accounts.token_program.to_account_info();
         let acc_tokn = &ctx.accounts.swap_token.to_account_info();
@@ -999,7 +1025,7 @@ pub mod swap_contract {
             msg!("No swap deposit role");
             return Err(ErrorCode::AccessDenied.into());
         }
-        let acc_tinf_expected = Pubkey::create_program_address(&[acc_mint.key.as_ref(), &[inp_tinf_nonce]], ctx.program_id)
+        let acc_tinf_expected = Pubkey::create_program_address(&[acc_mint.key.as_ref(), acc_pair.key.as_ref(), &[inp_tinf_nonce]], ctx.program_id)
             .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
         verify_matching_accounts(acc_info.key, &acc_tinf_expected, Some(String::from("Invalid token info")))?;
         verify_matching_accounts(acc_mint.key, &ctx.accounts.token_info.mint, Some(String::from("Invalid token mint")))?;
@@ -1270,8 +1296,6 @@ pub mod swap_contract {
             //msg!("Atellix: Orcl: {}", oracle_val.to_string());
             let oracle_adj: f64 = oracle_val * base_f.powi(adjust_i);
             oracle_log_val = oracle_adj as u128;
-            extra_decimals = base_u.pow(adjust_u);
-            //msg!("Atellix: Extra decimals: {}", extra_decimals.to_string());
         }
 
         if sw.oracle_verify { // Check for valid oracle range before proceeding
@@ -1291,8 +1315,51 @@ pub mod swap_contract {
         //msg!("Atellix: Tokens verified ready to swap");
         let mut swap_rate: u128 = sw.rate_swap as u128;
         let mut base_rate: u128 = sw.rate_base as u128;
-        if sw.oracle_rates {
+        if sw.basis_rates {
+            let tokens_outstanding: u64;
+            let tokens_cost: u64;
+            if sw.basis_inbound {
+                tokens_outstanding = inb_info.tokens_outstanding.checked_sub(inb_info.tokens_offset).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                tokens_cost = inb_info.cost_basis.checked_sub(inb_info.cost_offset).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            } else {
+                tokens_outstanding = out_info.tokens_outstanding.checked_sub(out_info.tokens_offset).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                tokens_cost = out_info.cost_basis.checked_sub(inb_info.cost_offset).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            }
+            // Calculate basis price and multiply time 10^8 to compare to oracle prices
+            let mut basis_price: u128 = u128::try_from(tokens_outstanding).map_err(|_| ErrorCode::Overflow)?;
+            let cost_decimals: u128 = base_u.pow(adjust_u);
+            basis_price = basis_price.checked_mul(cost_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            basis_price = basis_price.checked_div(tokens_cost as u128).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            if sw.oracle_rates {
+                extra_decimals = cost_decimals;
+                //msg!("Atellix: Extra decimals: {}", extra_decimals.to_string());
+                let in_decimals: i32 = inb_info.decimals as i32;
+                let out_decimals: i32 = out_info.decimals as i32;
+                let mut abs_decimals: i32 = in_decimals.checked_sub(out_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                abs_decimals = abs_decimals.abs();
+                let abs_decimals_u: u32 = u32::try_from(abs_decimals).map_err(|_| ErrorCode::Overflow)?;
+                let adjust_decimals: u128 = base_u.checked_pow(abs_decimals_u).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                if sw.oracle_inverse {
+                    swap_rate = basis_price;
+                    if sw.oracle_max && oracle_log_val > swap_rate {
+                        swap_rate = oracle_log_val;
+                    }
+                    base_rate = adjust_decimals;
+                } else {
+                    swap_rate = adjust_decimals;
+                    base_rate = basis_price;
+                    if sw.oracle_max && oracle_log_val > base_rate {
+                        base_rate = oracle_log_val;
+                    }
+                }
+            } else {
+                base_rate = basis_price;
+                swap_rate = cost_decimals;
+            }
+        } else if sw.oracle_rates {
             //msg!("Atellix: Use oracle rates");
+            extra_decimals = base_u.pow(adjust_u);
+            //msg!("Atellix: Extra decimals: {}", extra_decimals.to_string());
             let in_decimals: i32 = inb_info.decimals as i32;
             let out_decimals: i32 = out_info.decimals as i32;
             let mut abs_decimals: i32 = in_decimals.checked_sub(out_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
@@ -1312,10 +1379,10 @@ pub mod swap_contract {
                 }
             }
         }
-        //msg!("Atellix: Rates - Swap: {} Base: {}", swap_rate.to_string(), base_rate.to_string());
+        msg!("Atellix: Rates - Swap: {} Base: {}", swap_rate.to_string(), base_rate.to_string());
         let input_val: u128 = inp_tokens as u128;
         let result: u128 = calculate_swap(sw, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals)?;
-        //msg!("Atellix: Result: {}", result.to_string());
+        msg!("Atellix: Result: {}", result.to_string());
 
         let tokens_inb: u64;
         let tokens_out: u64;
@@ -1326,6 +1393,15 @@ pub mod swap_contract {
             tokens_inb = inp_tokens;
             tokens_out = u64::try_from(result).map_err(|_| ErrorCode::Overflow)?;
         }
+
+        if sw.basis_inbound {
+            inb_info.cost_basis = inb_info.cost_basis.checked_sub(tokens_out).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            inb_info.tokens_outstanding = inb_info.tokens_outstanding.checked_sub(tokens_inb).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        } else {
+            out_info.cost_basis = inb_info.cost_basis.checked_add(tokens_inb).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            out_info.tokens_outstanding = inb_info.tokens_outstanding.checked_add(tokens_out).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        }
+
         let tokens_fee: u64 = calculate_fee(sw, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals)?;
 
         /*msg!("Atellix: Inb: {} Out: {}", tokens_inb.to_string(), tokens_out.to_string());
@@ -1523,6 +1599,7 @@ pub struct ApproveToken<'info> {
     #[account(mut)]
     pub swap_token: AccountInfo<'info>,
     pub token_mint: AccountInfo<'info>,
+    pub pair_mint: AccountInfo<'info>,
     #[account(mut)]
     pub token_info: AccountInfo<'info>,
     #[account(address = token::ID)]
@@ -1569,6 +1646,7 @@ pub struct MintDeposit<'info> {
     pub token_admin: AccountInfo<'info>,
     #[account(mut)]
     pub token_mint: AccountInfo<'info>,
+    pub pair_mint: AccountInfo<'info>,
     #[account(mut)]
     pub token_info: ProgramAccount<'info, TokenInfo>,
     #[account(address = token::ID)]
@@ -1585,8 +1663,8 @@ pub struct TransferDeposit<'info> {
     pub swap_token: AccountInfo<'info>,
     #[account(signer)]
     pub token_admin: AccountInfo<'info>,
-    #[account(mut)]
     pub token_mint: AccountInfo<'info>,
+    pub pair_mint: AccountInfo<'info>,
     #[account(mut)]
     pub token_info: ProgramAccount<'info, TokenInfo>,
     #[account(mut)]
@@ -1647,6 +1725,8 @@ pub struct SwapData {
     pub locked: bool,                   // Locked flag (prevents updates)
     pub slot: u64,                      // Last slot updated
     pub merchant_only: bool,            // Merchant-only flag
+    pub basis_rates: bool,              // Uses cost-basis rates
+    pub basis_inbound: bool,            // Update basis on inbound token (otherwise update on outbound)
     pub oracle_data: Pubkey,            // Oracle data address or Pubkey::default() for none
     pub oracle_type: u8,                // Oracle data type
     pub oracle_rates: bool,             // Uses oracle data for swap rates
@@ -1672,11 +1752,16 @@ pub struct SwapData {
 
 #[account]
 pub struct TokenInfo {
-    pub mint: Pubkey,
-    pub decimals: u8,
-    pub amount: u64,
-    pub token_tx_count: u64,
     pub slot: u64,
+    pub mint: Pubkey,
+    pub pair_mint: Pubkey,
+    pub amount: u64,
+    pub decimals: u8,
+    pub token_tx_count: u64,
+    pub tokens_outstanding: u64,
+    pub tokens_offset: u64,
+    pub cost_basis: u64,
+    pub cost_offset: u64,
 }
 
 #[account]
