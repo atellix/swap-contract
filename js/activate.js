@@ -35,9 +35,6 @@ async function main() {
     writeData['swapContractRootData'] = rootData.pubkey
     console.log("Root Data: " + rootData.pubkey)
 
-    const tkiBytes = swapContract.account.tokenInfo.size
-    const tkiRent = await provider.connection.getMinimumBalanceForRentExemption(tkiBytes)
-
     const authBytes = 130 + (16384 * 2)
     const authRent = await provider.connection.getMinimumBalanceForRentExemption(authBytes)
 
