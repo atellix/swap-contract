@@ -20,23 +20,23 @@ async function main() {
     const netKeys = await jsonFileRead('../../data/export/network_keys.json')
     const netData = await jsonFileRead('../../data/net.json')
     const rootData = await programAddress([swapContractPK.toBuffer()], swapContractPK)
-    const tkiBytes = swapContract.account.tokenInfo.size
-    const tkiRent = await provider.connection.getMinimumBalanceForRentExemption(tkiBytes)
+    //const tkiBytes = swapContract.account.tokenInfo.size
+    //const tkiRent = await provider.connection.getMinimumBalanceForRentExemption(tkiBytes)
 
     var authData
     var authDataPK
     var swapDepost1
-    var tokenMint = new PublicKey(netData.tokenMintUSDV)
-    var pairMint = new PublicKey('So11111111111111111111111111111111111111112')
+    var inbMint = new PublicKey('So11111111111111111111111111111111111111112')
+    var outMint = new PublicKey(netData.tokenMintUSDV)
 
     const swapCache = await jsonFileRead('../../data/swap.json')
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
     swapDeposit1 = importSecretKey(netKeys['swap-deposit-1-secret'])
     treasury1 = importSecretKey(netKeys['treasury-1-secret'])
 
-    const tkiData = await programAddress([tokenMint.toBuffer(), pairMint.toBuffer()], swapContractPK)
-    const tokData = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint)
-    const srcToken = await associatedTokenAddress(treasury1.publicKey, tokenMint)
+    const tkiData = await programAddress([inbMint.toBuffer(), outMint.toBuffer()], swapContractPK)
+    const tokData = await associatedTokenAddress(new PublicKey(rootData.pubkey), outMint)
+    const srcToken = await associatedTokenAddress(treasury1.publicKey, outMint)
 
     console.log('Token Info: ' + tkiData.pubkey)
     console.log('Deposit: ' + tokData.pubkey)
@@ -44,18 +44,19 @@ async function main() {
         rootData.nonce,
         tkiData.nonce,
         tokData.nonce,
-        new anchor.BN('100000000000'), // Ten million (* 10000)
+        new anchor.BN('100000000000'),  // Ten million (* 10000)
+        false,                          // true = inbound, false = outbound
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
                 authData: authDataPK,
                 swapAdmin: swapDeposit1.publicKey,
+                swapData: new PublicKey(tkiData.pubkey),
                 swapToken: new PublicKey(tokData.pubkey),
-                tokenAdmin: treasury1.publicKey,
-                tokenMint: tokenMint,
-                pairMint: pairMint,
+                inbMint: inbMint,
+                outMint: outMint,
                 tokenSrc: new PublicKey(srcToken.pubkey),
-                tokenInfo: new PublicKey(tkiData.pubkey),
+                tokenAdmin: treasury1.publicKey,
                 tokenProgram: TOKEN_PROGRAM_ID,
             },
             signers: [swapDeposit1, treasury1],

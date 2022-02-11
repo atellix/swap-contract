@@ -16,7 +16,7 @@ cpi = ["no-entrypoint"]
 default = ["no-log-ix-name"]
 
 [dependencies]
-anchor-lang = "0.21.0"
+anchor-lang = { version = "0.21.0", features = ["init-if-needed"] }
 anchor-spl = "0.21.0"
 switchboard-program = "0.1.52"
 solana-program = "1.8.5"

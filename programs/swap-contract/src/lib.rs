@@ -1,18 +1,19 @@
 use crate::program::SwapContract;
-use std::{ io::Cursor, string::String, str::FromStr, result::Result as FnResult, convert::TryFrom };
+use std::{ string::String, result::Result as FnResult, convert::TryFrom };
 use bytemuck::{ Pod, Zeroable };
 use byte_slice_cast::*;
 use num_enum::{ TryFromPrimitive, IntoPrimitive };
+pub use borsh::{ BorshDeserialize, BorshSerialize };
 //use arrayref::array_ref;
 use switchboard_program;
 use switchboard_program::{ FastRoundResultAccountData };
 use anchor_lang::prelude::*;
-use anchor_spl::token::{ self, Mint, TokenAccount, MintTo, Transfer };
+use anchor_spl::token::{ self, Token, Mint, TokenAccount, MintTo, Transfer };
+use anchor_spl::associated_token::{ AssociatedToken };
 use solana_program::{
-    sysvar, system_instruction, system_program,
-    program::{ invoke, invoke_signed },
+    //program::{ invoke, invoke_signed },
     account_info::AccountInfo,
-    instruction::{ AccountMeta, Instruction },
+    //instruction::{ AccountMeta, Instruction },
     clock::Clock
 };
 
@@ -21,18 +22,13 @@ use solana_program::{
 extern crate slab_alloc;
 use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, SlabVec, SlabTreeError };
 
-extern crate decode_account;
-use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgradeableLoaderAccountType };
-
-declare_id!("5NYqh8Etctqw1z38oQwX3yXNWURZZsCn6N5779TuQSR2");
+declare_id!("71tkL9H7uS4DnoLJXyLpszS99bsjFZazAEFLmN4YURb4");
 
 pub const VERSION_MAJOR: u32 = 1;
 pub const VERSION_MINOR: u32 = 0;
 pub const VERSION_PATCH: u32 = 0;
 
 pub const MAX_RBAC: u32 = 128;
-pub const SPL_TOKEN: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
-pub const ASC_TOKEN: &str = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
 
 #[repr(u8)]
 #[derive(PartialEq, Debug, Eq, Copy, Clone, TryFromPrimitive, IntoPrimitive)]
@@ -179,53 +175,6 @@ fn has_role(acc_auth: &AccountInfo, role: Role, key: &Pubkey) -> ProgramResult {
     Ok(())
 }
 
-fn verify_program_owner(program_id: &Pubkey, acc_prog: &AccountInfo, acc_pdat: &AccountInfo, acc_user: &AccountInfo) -> ProgramResult {
-    if *acc_prog.key != *program_id {
-        msg!("Program account is not this program");
-        return Err(ErrorCode::AccessDenied.into());
-    }
-    //msg!("Verified program account");
-    let data: &[u8] = &acc_prog.try_borrow_data()?;
-    let res = parse_bpf_upgradeable_loader(data);
-    if ! res.is_ok() {
-        msg!("Failed to decode program");
-        return Err(ErrorCode::AccessDenied.into());
-    }
-    let program_data = match res.unwrap() {
-        BpfUpgradeableLoaderAccountType::Program(info) => info.program_data,
-        _ => {
-            msg!("Invalid program account type");
-            return Err(ErrorCode::AccessDenied.into());
-        },
-    };
-    if acc_pdat.key.to_string() != program_data {
-        msg!("Program data address does not match");
-        return Err(ErrorCode::AccessDenied.into());
-    }
-    //msg!("Verified program data account");
-    let data2: &[u8] = &acc_pdat.try_borrow_data()?;
-    let res2 = parse_bpf_upgradeable_loader(data2);
-    if ! res2.is_ok() {
-        msg!("Failed to decode program data");
-        return Err(ErrorCode::AccessDenied.into());
-    }
-    let program_owner = match res2.unwrap() {
-        BpfUpgradeableLoaderAccountType::ProgramData(info) => info.authority.unwrap(),
-        _ => {
-            msg!("Invalid program data account type");
-            return Err(ErrorCode::AccessDenied.into());
-        },
-    };
-    if acc_user.key.to_string() != program_owner {
-        msg!("Root admin is not program owner");
-        msg!("Expected: {}", program_owner);
-        msg!("Received: {}", acc_user.key.to_string());
-        return Err(ErrorCode::AccessDenied.into());
-    }
-    //msg!("Verified program owner");
-    Ok(())
-}
-
 fn verify_matching_accounts(left: &Pubkey, right: &Pubkey, error_msg: Option<String>) -> ProgramResult {
     if *left != *right {
         if error_msg.is_some() {
@@ -235,13 +184,6 @@ fn verify_matching_accounts(left: &Pubkey, right: &Pubkey, error_msg: Option<Str
         }
         return Err(ErrorCode::InvalidAccount.into());
     }
-    Ok(())
-}
-
-fn verify_program_data(bump_seed: u8, root_key: &Pubkey, program: &Pubkey) -> ProgramResult {
-    let acc_root_expected = Pubkey::create_program_address(&[program.as_ref(), &[bump_seed]], program)
-        .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
-    verify_matching_accounts(root_key, &acc_root_expected, Some(String::from("Invalid root data")))?;
     Ok(())
 }
 
@@ -362,58 +304,16 @@ pub mod swap_contract {
         inp_source_url: String,
         inp_verify_url: String,
     ) -> ProgramResult {
-        let acc_prog = &ctx.accounts.program.to_account_info();
-        let acc_pdat = &ctx.accounts.program_data.to_account_info();
-        let acc_user = &ctx.accounts.program_admin.to_account_info();
-        let acc_info = &ctx.accounts.program_info.to_account_info();
-        let acc_sys = &ctx.accounts.system_program.to_account_info();
-        verify_program_owner(ctx.program_id, &acc_prog, &acc_pdat, &acc_user)?;
-        if inp_create {
-            let (info_address, bump_seed) = Pubkey::find_program_address(
-                &[ctx.program_id.as_ref(), String::from("metadata").as_ref()],
-                ctx.program_id,
-            );
-            verify_matching_accounts(&info_address, &acc_info.key,
-                Some(String::from("Invalid program_info account"))
-            )?;
-            let mdstr = String::from("metadata");
-            let account_signer_seeds: &[&[_]] = &[
-                ctx.program_id.as_ref(),
-                mdstr.as_ref(),
-                &[bump_seed],
-            ];
-            invoke_signed(
-                &system_instruction::create_account(
-                    acc_user.key,
-                    acc_info.key,
-                    inp_info_rent,
-                    inp_info_size,
-                    ctx.program_id
-                ),
-                &[
-                    acc_user.clone(),
-                    acc_info.clone(),
-                    acc_sys.clone(),
-                ],
-                &[account_signer_seeds],
-            )?;
-        }
-        let md = ProgramMetadata {
-            semvar_major: VERSION_MAJOR,
-            semvar_minor: VERSION_MINOR,
-            semvar_patch: VERSION_PATCH,
-            program: *ctx.accounts.program.to_account_info().key,
-            program_name: inp_program_name,
-            developer_name: inp_developer_name,
-            developer_url: inp_developer_url,
-            source_url: inp_source_url,
-            verify_url: inp_verify_url,
-        };
-        let acc_info = &ctx.accounts.program_info.to_account_info();
-        let mut info_data = acc_info.try_borrow_mut_data()?;
-        let info_dst: &mut [u8] = &mut info_data;
-        let mut info_crs = Cursor::new(info_dst);
-        md.try_serialize(&mut info_crs)?;
+        let md = &mut ctx.accounts.program_info;
+        md.semvar_major = VERSION_MAJOR;
+        md.semvar_minor = VERSION_MINOR;
+        md.semvar_patch = VERSION_PATCH;
+        md.program = ctx.accounts.program.key();
+        md.program_name = inp_program_name;
+        md.developer_name = inp_developer_name;
+        md.developer_url = inp_developer_url;
+        md.source_url = inp_source_url;
+        md.verify_url = inp_verify_url;
         msg!("Program: {}", ctx.accounts.program.key.to_string());
         msg!("Program Name: {}", md.program_name.as_str());
         msg!("Version: {}.{}.{}", VERSION_MAJOR.to_string(), VERSION_MINOR.to_string(), VERSION_PATCH.to_string());
@@ -428,18 +328,16 @@ pub mod swap_contract {
         inp_root_nonce: u8,
         inp_role: u32,
     ) -> ProgramResult {
-        let acc_admn = &ctx.accounts.program_admin.to_account_info(); // Program owner or network admin
-        let acc_root = &ctx.accounts.root_data.to_account_info();
-        let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let acc_rbac = &ctx.accounts.rbac_user.to_account_info();
+        let acc_admn = &ctx.accounts.program_admin.to_account_info();
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
 
         // Check for NetworkAdmin authority
         let admin_role = has_role(&acc_auth, Role::NetworkAdmin, acc_admn.key);
         let mut program_owner: bool = false;
         if admin_role.is_err() {
-            let acc_prog = &ctx.accounts.program.to_account_info();
-            let acc_pdat = &ctx.accounts.program_data.to_account_info();
-            verify_program_owner(ctx.program_id, &acc_prog, &acc_pdat, &acc_admn)?;
+            let acc_pdat = &ctx.accounts.program_data;
+            verify_matching_accounts(&acc_pdat.upgrade_authority_address.unwrap(), acc_admn.key, Some(String::from("Invalid program owner")))?;
             program_owner = true;
         }
 
@@ -460,12 +358,6 @@ pub mod swap_contract {
             msg!("Cannot grant roles to self");
             return Err(ErrorCode::AccessDenied.into());
         }
-
-        // Verify program data
-        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
-            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
-        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
-        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
 
         let auth_data: &mut[u8] = &mut acc_auth.try_borrow_mut_data()?;
         let rd = SlabPageAlloc::new(auth_data);
@@ -491,7 +383,7 @@ pub mod swap_contract {
         Ok(())
     }
 
-    pub fn revoke(ctx: Context<UpdateRBAC>,
+    /*pub fn revoke(ctx: Context<UpdateRBAC>,
         inp_root_nonce: u8,
         inp_role: u32,
     ) -> ProgramResult {
@@ -542,7 +434,7 @@ pub mod swap_contract {
             msg!("Atellix: Role not found");
         }
         Ok(())
-    }
+    }*/
 
     pub fn create_swap(ctx: Context<CreateSwap>,
         inp_root_nonce: u8,             // RootData nonce
@@ -580,15 +472,11 @@ pub mod swap_contract {
         let acc_out = &ctx.accounts.out_mint.to_account_info();
         //let acc_sys = &ctx.accounts.system_program.to_account_info();
 
-        msg!("step 1");
-
         // Verify program data
         let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
             .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
         verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
         verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
-
-        msg!("step 2");
 
         // Verify swap data
         let acc_swpd_expected = Pubkey::create_program_address(&[acc_inb.key.as_ref(), acc_out.key.as_ref(), &[inp_swpd_nonce]], ctx.program_id)
@@ -643,33 +531,27 @@ pub mod swap_contract {
         };
 
         let clock = Clock::get()?;
-        let sw = SwapData {
-            active: true,
-            locked: false,
-            slot: clock.slot,
-            basis_inbound: inp_basis_inbound,
-            oracle_data: oracle,
-            oracle_type: inp_oracle_type,
-            oracle_verify: inp_oracle_verify,
-            oracle_verify_min: inp_verify_min,
-            oracle_verify_max: inp_verify_max,
-            inb_mint: *acc_inb.key,
-            inb_token_data: [inb_token],
-            out_mint: *acc_out.key,
-            out_token_data: [out_token],
-            fees_inbound: inp_fees_inbound,
-            fees_token: *ctx.accounts.fees_token.to_account_info().key,
-            swap_tx_count: 0,
-            tokens_outstanding: 0,
-            tokens_offset: 0,
-            cost_basis: 0,
-            cost_offset: 0,
-        };
-
-        msg!("step 3");
-
-        *(ctx.accounts.swap_data.load_init()?) = sw;
-
+        let sw = &mut ctx.accounts.swap_data;
+        sw.active = true;
+        sw.locked = false;
+        sw.slot = clock.slot;
+        sw.basis_inbound = inp_basis_inbound;
+        sw.oracle_data = oracle;
+        sw.oracle_type = inp_oracle_type;
+        sw.oracle_verify = inp_oracle_verify;
+        sw.oracle_verify_min = inp_verify_min;
+        sw.oracle_verify_max = inp_verify_max;
+        sw.inb_mint = *acc_inb.key;
+        sw.inb_token_data = inb_token;
+        sw.out_mint = *acc_out.key;
+        sw.out_token_data = out_token;
+        sw.fees_inbound = inp_fees_inbound;
+        sw.fees_token = *ctx.accounts.fees_token.to_account_info().key;
+        sw.swap_tx_count = 0;
+        sw.tokens_outstanding = 0;
+        sw.tokens_offset = 0;
+        sw.cost_basis = 0;
+        sw.cost_offset = 0;
         Ok(())
     }
 
@@ -845,16 +727,16 @@ pub mod swap_contract {
     } */
 
     pub fn deposit(ctx: Context<TransferDeposit>,
-        inp_root_nonce: u8,         // RootData nonce
-        inp_swpd_nonce: u8,         // SwapData nonce
+        _inp_root_nonce: u8,         // RootData nonce
+        _inp_swpd_nonce: u8,         // SwapData nonce
         inp_tokn_nonce: u8,         // Associated token nonce
         inp_amount: u64,            // Amount to mint
         inp_inbound_token: bool,    // Apply to inbound token (otherwise outbound)
     ) -> ProgramResult {
-        let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
-        let acc_tadm = &ctx.accounts.token_admin.to_account_info(); // Token mint or transfer authority
         let acc_root = &ctx.accounts.root_data.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
+        let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
+        let acc_tadm = &ctx.accounts.token_admin.to_account_info(); // Token mint or transfer authority
         let acc_tsrc = &ctx.accounts.token_src.to_account_info();
         let acc_prog = &ctx.accounts.token_program.to_account_info();
         let acc_swap = &ctx.accounts.swap_data.to_account_info();
@@ -862,42 +744,24 @@ pub mod swap_contract {
         let acc_inb = &ctx.accounts.inb_mint.to_account_info();
         let acc_out = &ctx.accounts.out_mint.to_account_info();
 
-        let swap_data = ctx.accounts.swap_data.load()?;
-        
-        // Verify program data
-        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
-            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
-        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
-        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
-
         let admin_role = has_role(&acc_auth, Role::SwapDeposit, acc_admn.key);
         if admin_role.is_err() {
             msg!("No swap deposit role");
             return Err(ErrorCode::AccessDenied.into());
         }
-        let acc_swpd_expected = Pubkey::create_program_address(&[acc_out.key.as_ref(), acc_inb.key.as_ref(), &[inp_swpd_nonce]], ctx.program_id)
-            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
-        verify_matching_accounts(acc_swap.key, &acc_swpd_expected, Some(String::from("Invalid token info")))?;
-        verify_matching_accounts(acc_inb.key, &swap_data.inb_mint, Some(String::from("Invalid inbound token mint")))?;
-        verify_matching_accounts(acc_out.key, &swap_data.out_mint, Some(String::from("Invalid outbound token mint")))?;
 
         // Verify swap associated token
-        let spl_token: Pubkey = Pubkey::from_str(SPL_TOKEN).unwrap();
-        let asc_token: Pubkey = Pubkey::from_str(ASC_TOKEN).unwrap();
-        let derived_key: Pubkey;
+        let derived_key;
         if inp_inbound_token {
             derived_key = Pubkey::create_program_address(
-                &[&acc_root.key.to_bytes(), &spl_token.to_bytes(), &acc_inb.key.to_bytes(), &[inp_tokn_nonce]], &asc_token
+                &[&acc_root.key.to_bytes(), &Token::id().to_bytes(), &acc_inb.key.to_bytes(), &[inp_tokn_nonce]], &AssociatedToken::id()
             ).map_err(|_| ErrorCode::InvalidDerivedAccount)?;
         } else {
             derived_key = Pubkey::create_program_address(
-                &[&acc_root.key.to_bytes(), &spl_token.to_bytes(), &acc_out.key.to_bytes(), &[inp_tokn_nonce]], &asc_token
+                &[&acc_root.key.to_bytes(), &Token::id().to_bytes(), &acc_out.key.to_bytes(), &[inp_tokn_nonce]], &AssociatedToken::id()
             ).map_err(|_| ErrorCode::InvalidDerivedAccount)?;
         }
-        if derived_key != *acc_tokn.key {
-            msg!("Invalid token account");
-            return Err(ErrorCode::InvalidDerivedAccount.into());
-        }
+        verify_matching_accounts(acc_tokn.key, &derived_key, Some(String::from("Invalid swap token vault")))?;
 
         //msg!("Atellix: Attempt transfer deposit: {}", inp_amount.to_string());
         let cpi_accounts = Transfer {
@@ -910,19 +774,22 @@ pub mod swap_contract {
         token::transfer(cpi_ctx, inp_amount)?;
 
         let clock = Clock::get()?;
-        let sw = &mut ctx.accounts.swap_data.load_mut()?;
-        let ti: &mut TokenData;
-        if inp_inbound_token {
-            ti = &mut sw.inb_token_data[0];
+        let sw = &mut ctx.accounts.swap_data;
+
+        verify_matching_accounts(acc_inb.key, &sw.inb_mint, Some(String::from("Invalid inbound mint")))?;
+        verify_matching_accounts(acc_out.key, &sw.out_mint, Some(String::from("Invalid outbound mint")))?;
+
+        let new_total;
+        if inp_inbound_token { 
+            sw.inb_token_data.amount = sw.inb_token_data.amount.checked_add(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            new_total = sw.inb_token_data.amount;
         } else {
-            ti = &mut sw.out_token_data[0];
+            sw.out_token_data.amount = sw.out_token_data.amount.checked_add(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            new_total = sw.out_token_data.amount;
         }
-        ti.amount = ti.amount.checked_add(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        let new_total = ti.amount;
-        let mut swap_data_mut = ctx.accounts.swap_data.load_mut()?;
-        swap_data_mut.slot = clock.slot;
-        swap_data_mut.swap_tx_count = swap_data_mut.swap_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        let tx_count = swap_data_mut.swap_tx_count;
+        sw.slot = clock.slot;
+        sw.swap_tx_count = sw.swap_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        let tx_count = sw.swap_tx_count;
 
         //msg!("Atellix: New token amount: {}", ctx.accounts.token_info.amount.to_string());
         msg!("atellix-log");
@@ -1424,6 +1291,7 @@ pub struct Initialize<'info> {
     pub root_data: Account<'info, RootData>,
     #[account(zero)]
     pub auth_data: UncheckedAccount<'info>,
+    #[account(constraint = program.programdata_address() == Some(program_data.key()))]
     pub program: Program<'info, SwapContract>,
     #[account(constraint = program_data.upgrade_authority_address == Some(program_admin.key()))]
     pub program_data: Account<'info, ProgramData>,
@@ -1434,24 +1302,29 @@ pub struct Initialize<'info> {
 
 #[derive(Accounts)]
 pub struct UpdateMetadata<'info> {
-    pub program: AccountInfo<'info>,
-    pub program_data: AccountInfo<'info>,
-    #[account(signer)]
-    pub program_admin: AccountInfo<'info>,
+    #[account(constraint = program.programdata_address() == Some(program_data.key()))]
+    pub program: Program<'info, SwapContract>,
+    #[account(constraint = program_data.upgrade_authority_address == Some(program_admin.key()))]
+    pub program_data: Account<'info, ProgramData>,
     #[account(mut)]
-    pub program_info: AccountInfo<'info>,
+    pub program_admin: Signer<'info>,
+    #[account(init_if_needed, seeds = [program_id.as_ref(), b"metadata"], bump, payer = program_admin, space = 584)]
+    pub program_info: Account<'info, ProgramMetadata>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
+#[instruction(inp_root_nonce: u8)]
 pub struct UpdateRBAC<'info> {
+    #[account(seeds = [program_id.as_ref()], bump = inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
+    #[account(mut, constraint = root_data.root_authority == auth_data.key())]
+    pub auth_data: UncheckedAccount<'info>,
+    #[account(constraint = program.programdata_address() == Some(program_data.key()))]
+    pub program: Program<'info, SwapContract>,
+    pub program_data: Account<'info, ProgramData>,
     #[account(mut)]
-    pub auth_data: AccountInfo<'info>,
-    pub program: AccountInfo<'info>,
-    pub program_data: AccountInfo<'info>,
-    #[account(signer)]
-    pub program_admin: AccountInfo<'info>,
+    pub program_admin: Signer<'info>,
     pub rbac_user: AccountInfo<'info>,
 }
 
@@ -1464,8 +1337,8 @@ pub struct CreateSwap<'info> {
     pub auth_data: UncheckedAccount<'info>,
     #[account(mut)]
     pub swap_admin: Signer<'info>,
-    #[account(init, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref()], bump, payer = swap_admin, owner = *program_id)]
-    pub swap_data: AccountLoader<'info, SwapData>,
+    #[account(init, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref()], bump, payer = swap_admin)]
+    pub swap_data: Account<'info, SwapData>,
     pub inb_mint: Account<'info, Mint>,
     pub out_mint: Account<'info, Mint>,
     pub fees_token: Account<'info, TokenAccount>,
@@ -1502,23 +1375,25 @@ pub struct MintDeposit<'info> {
 }*/
 
 #[derive(Accounts)]
+#[instruction(_inp_root_nonce: u8, _inp_swpd_nonce: u8, inp_tokn_nonce: u8)]
 pub struct TransferDeposit<'info> {
+    #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
-    pub auth_data: AccountInfo<'info>,
-    #[account(signer)]
-    pub swap_admin: AccountInfo<'info>,
+    #[account(constraint = root_data.root_authority == auth_data.key())]
+    pub auth_data: UncheckedAccount<'info>,
     #[account(mut)]
-    pub swap_token: AccountInfo<'info>,
-    #[account(signer)]
-    pub token_admin: AccountInfo<'info>,
-    pub inb_mint: AccountInfo<'info>,
-    pub out_mint: AccountInfo<'info>,
+    pub swap_token: Account<'info, TokenAccount>,
     #[account(mut)]
-    pub swap_data: AccountLoader<'info, SwapData>,
+    pub swap_admin: Signer<'info>,
+    pub inb_mint: UncheckedAccount<'info>,
+    pub out_mint: UncheckedAccount<'info>,
+    #[account(mut, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref()], bump = _inp_swpd_nonce)]
+    pub swap_data: Account<'info, SwapData>,
     #[account(mut)]
-    pub token_src: AccountInfo<'info>,
-    #[account(address = token::ID)]
-    pub token_program: AccountInfo<'info>,
+    pub token_src: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub token_admin: Signer<'info>,
+    pub token_program: Program<'info, Token>,
 }
 
 /*#[derive(Accounts)]
@@ -1567,8 +1442,7 @@ pub struct Swap<'info> {
     pub token_program: AccountInfo<'info>,
 }*/
 
-#[zero_copy]
-#[derive(Default)]
+#[derive(Default, Copy, Clone, AnchorDeserialize, AnchorSerialize)]
 pub struct TokenData {
     pub basis_rates: bool,              // Uses cost-basis rates
     pub oracle_rates: bool,             // Uses oracle data for swap rates
@@ -1581,8 +1455,10 @@ pub struct TokenData {
     pub amount: u64,                    // Number of tokens in vault for this swap
     pub decimals: u8,                   // Mint decimal places
 }
+unsafe impl Pod for TokenData {}
+unsafe impl Zeroable for TokenData {}
 
-#[account(zero_copy)]
+#[account]
 #[derive(Default)]
 pub struct SwapData {
     pub active: bool,                   // Active flag
@@ -1595,9 +1471,9 @@ pub struct SwapData {
     pub oracle_verify_min: u64,         // Valid range minimum (times 10**6, or 6 decimals)
     pub oracle_verify_max: u64,         // Valid range maximum (times 10**6, or 6 decimals)
     pub inb_mint: Pubkey,               // Token info for inbound tokens
-    pub inb_token_data: [TokenData; 1],
+    pub inb_token_data: TokenData,
     pub out_mint: Pubkey,               // Token info for outbound tokens
-    pub out_token_data: [TokenData; 1],
+    pub out_token_data: TokenData,
     pub fees_inbound: bool,             // Use inbound (or alternatively outbound) token for fees
     pub fees_token: Pubkey,             // Fees account
     pub swap_tx_count: u64,             // Transaction index count
@@ -1679,6 +1555,7 @@ pub struct TransferEvent {
 }
 
 #[account]
+#[derive(Default)]
 pub struct ProgramMetadata {
     pub semvar_major: u32,
     pub semvar_minor: u32,

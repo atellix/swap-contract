@@ -18,9 +18,11 @@ function showData(spec) {
 }
 
 async function main() {
-    let tki = new PublicKey(process.argv[2])
-    let res = await swapContract.account.tokenInfo.fetch(tki)
-    console.log(showData(res))
+    let tki = new PublicKey('GJNJNU6LvjpCqtYa4THdhZ1Yog8wuKsTZoDYuqZiBE9x')
+    let res = await swapContract.account.swapData.fetch(tki)
+    console.log(res)
+    //console.log(res)
+    //console.log(showData(res))
 }
 
 main()

@@ -30,8 +30,8 @@ async function main() {
     writeData['swapContractProgramData'] = programData
 
     const rootData = await programAddress([swapContractPK.toBuffer()], swapContractPK)
-    const rootBytes = swapContract.account.rootData.size
-    const rootRent = await provider.connection.getMinimumBalanceForRentExemption(rootBytes)
+    //const rootBytes = swapContract.account.rootData.size
+    //const rootRent = await provider.connection.getMinimumBalanceForRentExemption(rootBytes)
     writeData['swapContractRootData'] = rootData.pubkey
     console.log("Root Data: " + rootData.pubkey)
 
@@ -72,8 +72,6 @@ async function main() {
 
     console.log('Initialize')
     await swapContract.rpc.initialize(
-        new anchor.BN(rootBytes),
-        new anchor.BN(rootRent),
         {
             accounts: {
                 program: swapContractPK,

@@ -22,16 +22,11 @@ async function main() {
     const programData = res.programdataAddress
 
     const infoData = await programAddress([swapContractPK.toBuffer(), Buffer.from('metadata', 'utf8')], swapContractPK)
-    const infoBytes = 584
-    const infoRent = await provider.connection.getMinimumBalanceForRentExemption(infoBytes)
     console.log('Program Metadata')
-    console.log((new PublicKey(infoData.pubkey)).toString(), infoBytes, infoRent)
+    console.log((new PublicKey(infoData.pubkey)).toString())
 
     console.log('Create Metadata')
     await swapContract.rpc.storeMetadata(
-        true,
-        new anchor.BN(infoBytes),
-        new anchor.BN(infoRent),
         "Swap Contract",
         "Atellix Network",
         "https://atellix.network/",

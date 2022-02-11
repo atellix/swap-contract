@@ -108,9 +108,9 @@ async function main() {
         }
     )
     console.log(res)
-    //let swapName = swapDataPK.toString().substring(0, 8)
-    //swapName = 'wsol-usdv'
-    //await jsonFileWrite('../../data/swap-' + swapName + '.json', writeData)
+    let swapName = swapData.pubkey.substring(0, 8)
+    swapName = 'wsol-usdv'
+    await jsonFileWrite('../../data/swap-' + swapName + '.json', writeData)
 }
 
 console.log('Begin')
