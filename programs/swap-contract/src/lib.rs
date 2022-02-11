@@ -781,11 +781,15 @@ pub mod swap_contract {
 
         let new_total;
         if inp_inbound_token { 
-            sw.inb_token_data.amount = sw.inb_token_data.amount.checked_add(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-            new_total = sw.inb_token_data.amount;
+            let mut ti = sw.inb_token_data;
+            ti.amount = ti.amount.checked_add(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            sw.inb_token_data = ti;
+            new_total = ti.amount;
         } else {
-            sw.out_token_data.amount = sw.out_token_data.amount.checked_add(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-            new_total = sw.out_token_data.amount;
+            let mut ti = sw.out_token_data;
+            ti.amount = ti.amount.checked_add(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            sw.out_token_data = ti;
+            new_total = ti.amount;
         }
         sw.slot = clock.slot;
         sw.swap_tx_count = sw.swap_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
