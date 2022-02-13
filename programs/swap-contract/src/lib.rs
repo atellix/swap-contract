@@ -191,6 +191,7 @@ fn calculate_rates(td: &TokenData, sw: &SwapData, swap_rate: &mut u128, base_rat
     let adjust_u: u32 = 8; // Calculate to 8 decimal places
     let base_u: u128 = 10;
     if td.basis_rates {
+        //msg!("Atellix: Use basis rates");
         let mut tokens_outstanding: i128 = sw.tokens_outstanding.checked_sub(sw.tokens_offset).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         let tokens_cost: i128 = sw.cost_basis.checked_sub(sw.cost_offset).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         // Calculate basis price and multiply time 10^8 to compare to oracle prices
@@ -199,6 +200,9 @@ fn calculate_rates(td: &TokenData, sw: &SwapData, swap_rate: &mut u128, base_rat
         tokens_outstanding = tokens_outstanding.checked_mul(cost_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         tokens_outstanding = tokens_outstanding.checked_div(tokens_cost).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         let basis_price: u128 = u128::try_from(tokens_outstanding).map_err(|_| ErrorCode::Overflow)?;
+        if basis_price == 0 {
+            return Err(ErrorCode::Overflow.into());
+        }
         if td.oracle_rates {
             *extra_decimals = u128::try_from(cost_decimals).map_err(|_| ErrorCode::Overflow)?;
             //msg!("Atellix: Extra decimals: {}", extra_decimals.to_string());
@@ -226,7 +230,7 @@ fn calculate_rates(td: &TokenData, sw: &SwapData, swap_rate: &mut u128, base_rat
             *swap_rate = u128::try_from(cost_decimals).map_err(|_| ErrorCode::Overflow)?;
         }
     } else if td.oracle_rates {
-        msg!("Atellix: Use oracle rates");
+        //msg!("Atellix: Use oracle rates");
         *extra_decimals = base_u.pow(adjust_u);
         //msg!("Atellix: Extra decimals: {}", extra_decimals.to_string());
         let in_decimals: i32 = sw.inb_token_data.decimals as i32;
@@ -250,7 +254,6 @@ fn calculate_rates(td: &TokenData, sw: &SwapData, swap_rate: &mut u128, base_rat
     }
     Ok(())
 }
-
 
 fn calculate_swap(td: &TokenData, is_buy: bool, input_val: u128, swap_rate: u128, base_rate: u128, extra_decimals: u128) -> FnResult<u128, ProgramError> {
     let nmr_1: u128;
@@ -887,8 +890,6 @@ pub mod swap_contract {
             new_total = ti.amount;
         }
         sw.slot = clock.slot;
-        sw.swap_tx_count = sw.swap_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        let tx_count = sw.swap_tx_count;
 
         //msg!("Atellix: New token amount: {}", new_total.to_string());
         msg!("atellix-log");
@@ -903,7 +904,6 @@ pub mod swap_contract {
             transfer: true,
             amount: inp_amount,
             new_total: new_total,
-            swap_tx: tx_count,
         });
 
         Ok(())
@@ -991,7 +991,6 @@ pub mod swap_contract {
             transfer: true,
             amount: inp_amount,
             new_total: ctx.accounts.token_info.amount,
-            token_tx: ctx.accounts.token_info.token_tx_count,
         });
 
         Ok(())
@@ -1141,10 +1140,10 @@ pub mod swap_contract {
         let mut swap_rate: u128 = current_data.rate_swap as u128;
         let mut base_rate: u128 = current_data.rate_base as u128;
         calculate_rates(current_data, sw, &mut swap_rate, &mut base_rate, &mut extra_decimals, oracle_log_val)?;
-        msg!("Atellix: Rates - Swap: {} Base: {}", swap_rate.to_string(), base_rate.to_string());
+        //msg!("Atellix: Rates - Swap: {} Base: {}", swap_rate.to_string(), base_rate.to_string());
         let input_val: u128 = inp_tokens as u128;
         let result: u128 = calculate_swap(current_data, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals)?;
-        msg!("Atellix: Result: {}", result.to_string());
+        //msg!("Atellix: Result: {}", result.to_string());
 
         let tokens_inb: u64;
         let tokens_out: u64;
@@ -1159,12 +1158,12 @@ pub mod swap_contract {
         let inbound_fees = (sw.fees_inbound && inp_swap_direction) || (!sw.fees_inbound && !inp_swap_direction);
         let tokens_fee: u64 = calculate_fee(current_data, inbound_fees, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals)?;
 
-        msg!("Atellix: Inb: {} Out: {}", tokens_inb.to_string(), tokens_out.to_string());
+        /*msg!("Atellix: Inb: {} Out: {}", tokens_inb.to_string(), tokens_out.to_string());
         if inbound_fees {
             msg!("Atellix: Fee Inb: {}", tokens_fee.to_string());
         } else {
             msg!("Atellix: Fee Out: {}", tokens_fee.to_string());
-        }
+        }*/
 
         /*if sw.merchant_only {
             if tokens_inb > merchant_revenue {
@@ -1545,7 +1544,6 @@ pub struct TransferEvent {
     pub transfer: bool, // or, mint
     pub amount: u64,
     pub new_total: u64,
-    pub swap_tx: u64,
 }
 
 #[account]
