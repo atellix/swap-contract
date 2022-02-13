@@ -3,7 +3,7 @@ use std::{ string::String, result::Result as FnResult, convert::TryFrom };
 use bytemuck::{ Pod, Zeroable };
 use byte_slice_cast::*;
 use num_enum::{ TryFromPrimitive, IntoPrimitive };
-pub use borsh::{ BorshDeserialize, BorshSerialize };
+//pub use borsh::{ BorshDeserialize, BorshSerialize };
 //use arrayref::array_ref;
 use switchboard_program;
 use switchboard_program::{ FastRoundResultAccountData };
@@ -424,7 +424,7 @@ pub mod swap_contract {
     }
 
     pub fn grant(ctx: Context<UpdateRBAC>,
-        inp_root_nonce: u8,
+        _inp_root_nonce: u8,
         inp_role: u32,
     ) -> ProgramResult {
         let acc_rbac = &ctx.accounts.rbac_user.to_account_info();
@@ -482,13 +482,11 @@ pub mod swap_contract {
         Ok(())
     }
 
-    /*pub fn revoke(ctx: Context<UpdateRBAC>,
-        inp_root_nonce: u8,
+    pub fn revoke(ctx: Context<UpdateRBAC>,
+        _inp_root_nonce: u8,
         inp_role: u32,
-    
-                ) -> ProgramResult {
+    ) -> ProgramResult {
         let acc_admn = &ctx.accounts.program_admin.to_account_info(); // Program owner or network admin
-        let acc_root = &ctx.accounts.root_data.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let acc_rbac = &ctx.accounts.rbac_user.to_account_info();
 
@@ -496,9 +494,8 @@ pub mod swap_contract {
         let admin_role = has_role(&acc_auth, Role::NetworkAdmin, acc_admn.key);
         let mut program_owner: bool = false;
         if admin_role.is_err() {
-            let acc_prog = &ctx.accounts.program.to_account_info();
-            let acc_pdat = &ctx.accounts.program_data.to_account_info();
-            verify_program_owner(ctx.program_id, &acc_prog, &acc_pdat, &acc_admn)?;
+            let acc_pdat = &ctx.accounts.program_data;
+            verify_matching_accounts(&acc_pdat.upgrade_authority_address.unwrap(), acc_admn.key, Some(String::from("Invalid program owner")))?;
             program_owner = true;
         }
 
@@ -514,12 +511,6 @@ pub mod swap_contract {
             return Err(ErrorCode::AccessDenied.into());
         }
 
-        // Verify program data
-        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
-            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
-        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
-        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
-
         let auth_data: &mut[u8] = &mut acc_auth.try_borrow_mut_data()?;
         let rd = SlabPageAlloc::new(auth_data);
         let authhash: u128 = CritMap::bytes_hash([[role as u32].as_byte_slice(), acc_rbac.key.as_ref()].concat().as_slice());
@@ -534,7 +525,7 @@ pub mod swap_contract {
             msg!("Atellix: Role not found");
         }
         Ok(())
-    }*/
+    }
 
     pub fn create_swap(ctx: Context<CreateSwap>,
         inp_root_nonce: u8,             // RootData nonce
@@ -1007,7 +998,7 @@ pub mod swap_contract {
         inp_tokens: u64,            // Number of tokens to send/receive (X tokens)
     ) -> ProgramResult {
         let acc_root = &ctx.accounts.root_data.to_account_info();
-        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+        //let acc_auth = &ctx.accounts.auth_data.to_account_info();
 
         // Verify swap token info and fees token
         let acc_fee = &ctx.accounts.fees_token.to_account_info();
@@ -1313,9 +1304,9 @@ pub struct UpdateMetadata<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(inp_root_nonce: u8)]
+#[instruction(_inp_root_nonce: u8)]
 pub struct UpdateRBAC<'info> {
-    #[account(seeds = [program_id.as_ref()], bump = inp_root_nonce)]
+    #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
     #[account(mut, constraint = root_data.root_authority == auth_data.key())]
     pub auth_data: UncheckedAccount<'info>,

@@ -439,20 +439,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "decode-account"
-version = "1.7.8"
-dependencies = [
- "base64 0.12.3",
- "bincode",
- "bs58 0.3.1",
- "lazy_static",
- "serde",
- "serde_derive",
- "solana-program",
- "thiserror",
-]
-
-[[package]]
 name = "derivative"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1152,7 +1138,6 @@ dependencies = [
  "arrayref",
  "byte-slice-cast",
  "bytemuck",
- "decode-account",
  "num_enum",
  "slab-alloc",
  "solana-program",
