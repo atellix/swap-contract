@@ -50,18 +50,6 @@ async function main() {
     const programData = res.programdataAddress
 
     const rootData = await programAddress([swapContractPK.toBuffer()])
-    const rootBytes = swapContract.account.rootData.size
-    const rootRent = await provider.connection.getMinimumBalanceForRentExemption(rootBytes)
-    console.log("Root Data: " + rootData.pubkey)
-
-    const tkiBytes = swapContract.account.tokenInfo.size
-    const tkiRent = await provider.connection.getMinimumBalanceForRentExemption(tkiBytes)
-
-    const authBytes = 130 + (16384 * 6)
-    const authRent = await provider.connection.getMinimumBalanceForRentExemption(authBytes)
-
-    const swapBytes = swapContract.account.swapData.size
-    const swapRent = await provider.connection.getMinimumBalanceForRentExemption(swapBytes)
 
     var tokenMint1
     var tokenMint2
@@ -80,20 +68,18 @@ async function main() {
 
     var djs
     try {
-        djs = await fs.readFile('../../data/swap-usdv-wsol.json')
+        djs = await fs.readFile('../../data/swap-wsol-usdv.json')
     } catch (error) {
         console.error('File Error: ', error)
     }
     const swapSpec = JSON.parse(djs.toString())
 
-    tokenMint1 = new PublicKey(swapSpec.tokenMint1)
-    tokenMint2 = new PublicKey(swapSpec.tokenMint2)
+    tokenMint1 = new PublicKey(swapSpec.inbMint) // WSOL
+    tokenMint2 = new PublicKey(swapSpec.outMint) // USDV
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
     swapDataPK = new PublicKey(swapSpec.swapData)
     feesTK = new PublicKey(swapSpec.feesToken)
 
-    const tkiData1 = await programAddress([tokenMint1.toBuffer(), tokenMint2.toBuffer()])
-    const tkiData2 = await programAddress([tokenMint2.toBuffer(), tokenMint1.toBuffer()])
     const tokData1 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint1)
     const tokData2 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint2)
 
@@ -112,33 +98,29 @@ async function main() {
         authData: authDataPK.toString(),
         swapUser: provider.wallet.publicKey.toString(),
         swapData: swapDataPK.toString(),
-        inbInfo: new PublicKey(tkiData1.pubkey).toString(),
         inbTokenSrc: new PublicKey(userToken1.pubkey).toString(),
         inbTokenDst: new PublicKey(tokData1.pubkey).toString(),
-        inbMint: tokenMint1.toString(),
-        outInfo: new PublicKey(tkiData2.pubkey).toString(),
         outTokenSrc: new PublicKey(tokData2.pubkey).toString(),
         outTokenDst: new PublicKey(userToken2.pubkey).toString(),
-        outMint: tokenMint2.toString(),
         feesToken: feesTK.toString(),
     })
     let apires = await swapContract.rpc.swap(
-        rootData.nonce,
-        tokData1.nonce,
-        tokData2.nonce,
-        true, // True - Buy, False - Sell
+        rootData.nonce,         // root nonce
+        tokData1.nonce,         // inbound vault nonce
+        tokData2.nonce,         // outbound vault nonce
+        true,                   // swap direction
+        false,                  // merchant swap
+        false,                  // is buy order
         //new anchor.BN(10 ** 9),
-        new anchor.BN(400 * (10**4)),
+        new anchor.BN(1 * (10**9)),
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
                 authData: authDataPK,
                 swapUser: provider.wallet.publicKey,
                 swapData: swapDataPK,
-                inbInfo: new PublicKey(tkiData1.pubkey),
                 inbTokenSrc: new PublicKey(userToken1.pubkey),
                 inbTokenDst: new PublicKey(tokData1.pubkey),
-                outInfo: new PublicKey(tkiData2.pubkey),
                 outTokenSrc: new PublicKey(tokData2.pubkey),
                 outTokenDst: new PublicKey(userToken2.pubkey),
                 tokenProgram: TOKEN_PROGRAM_ID,

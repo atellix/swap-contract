@@ -45,7 +45,7 @@ async function main() {
     
     const swapData = await programAddress([collateralMint.toBuffer(), issuingMint.toBuffer()], swapContractPK)
 
-    var feesInbound = false
+    var feesInbound = true
     var feesToken
     if (feesInbound) {
         feesToken = await associatedTokenAddress(feesOwner, collateralMint)
@@ -64,9 +64,6 @@ async function main() {
     let res = await swapContract.rpc.createSwap(
         rootData.nonce,             // root bump seed
         swapData.nonce,             // swap bump seed
-        //swapRent,                   // swap rent
-        //swapBytes,                  // swap size in bytes
-        true,                       // basis inbound
         false,                      // oracle verify
         1,                          // oracle type: 0 - no oracle, 1 - switchboard.xyz
         new anchor.BN(0),           // oracle verify min
@@ -82,7 +79,7 @@ async function main() {
         new anchor.BN(10 ** 4),     // swap rate
         new anchor.BN(10 ** 9),     // base rate
         // Outbound "Issuing" tokens (burning... swap_direction = 0: Issuing -> Collateral)
-        9,                          // decimals
+        4,                          // decimals
         true,                       // basis swap rates
         true,                       // oracle swap rates
         true,                       // oracle max
