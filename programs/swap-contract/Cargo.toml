@@ -22,7 +22,6 @@ switchboard-program = "0.1.52"
 solana-program = "1.8.5"
 bytemuck = "1.7.2"
 num_enum = "0.5.4"
-arrayref = "0.3.6"
 byte-slice-cast = "1.0.0"
 slab-alloc = { version = "1.0.0", path = "/Users/mfrager/Build/solana/crates/slab-alloc" }
 #net-authority = { version = "0.1.0", path = "/Users/mfrager/Build/solana/net-authority/programs/net-authority", features = ["cpi"] }
