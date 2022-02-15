@@ -188,8 +188,8 @@ fn calculate_rates(td: &TokenData, sw: &SwapData, swap_rate: &mut u128, base_rat
     let base_u: u128 = 10;
     if td.basis_rates {
         //msg!("Atellix: Use basis rates");
-        let mut tokens_outstanding: i128 = sw.tokens_outstanding.checked_sub(sw.tokens_offset).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        let tokens_cost: i128 = sw.cost_basis.checked_sub(sw.cost_offset).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        let mut tokens_outstanding: i128 = sw.tokens_outstanding.checked_add(sw.tokens_offset).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        let tokens_cost: i128 = sw.cost_basis.checked_add(sw.cost_offset).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         // Calculate basis price and multiply time 10^8 to compare to oracle prices
         let base_i: i128 = 10;
         let cost_decimals: i128 = base_i.pow(adjust_u);
@@ -1409,7 +1409,6 @@ pub struct Swap<'info> {
     pub root_data: Account<'info, RootData>,
     #[account(constraint = root_data.root_authority == auth_data.key())]
     pub auth_data: UncheckedAccount<'info>,
-    #[account(mut)]
     pub swap_user: Signer<'info>,
     #[account(mut)]
     pub swap_data: Account<'info, SwapData>,
