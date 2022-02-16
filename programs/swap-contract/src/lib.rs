@@ -13,7 +13,7 @@ use solana_program::{
     clock::Clock
 };
 
-//use net_authority::{ cpi::accounts::RecordRevenue, MerchantApproval };
+use net_authority::{ cpi::accounts::RecordRevenue, MerchantApproval };
 
 extern crate slab_alloc;
 use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, SlabVec, SlabTreeError };
@@ -251,10 +251,19 @@ fn calculate_rates(td: &TokenData, sw: &SwapData, swap_rate: &mut u128, base_rat
     Ok(())
 }
 
-fn calculate_swap(td: &TokenData, is_buy: bool, input_val: u128, swap_rate: u128, base_rate: u128, extra_decimals: u128) -> FnResult<u128, ProgramError> {
+fn calculate_swap(
+    td: &TokenData,
+    is_buy: bool,
+    input_val: u128,
+    swap_rate: u128,
+    base_rate: u128,
+    extra_decimals: u128,
+    merchant: bool,
+) -> FnResult<u128, ProgramError> {
     let nmr_1: u128;
-    if td.fees_bps > 0 {
-        let mut fee_part: u128 = input_val.checked_mul(td.fees_bps as u128).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+    let fees_bps: u32 = if merchant { 0 } else { td.fees_bps };
+    if fees_bps > 0 {
+        let mut fee_part: u128 = input_val.checked_mul(fees_bps as u128).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         fee_part = fee_part.checked_div(10000).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         if is_buy {
             nmr_1 = input_val.checked_add(fee_part).ok_or(ProgramError::from(ErrorCode::Overflow))?;
@@ -293,11 +302,21 @@ fn calculate_swap(td: &TokenData, is_buy: bool, input_val: u128, swap_rate: u128
     Ok(result)
 }
 
-fn calculate_fee(td: &TokenData, inbound_fees: bool, is_buy: bool, input_val: u128, swap_rate: u128, base_rate: u128, extra_decimals: u128) -> FnResult<u64, ProgramError> {
+fn calculate_fee(
+    td: &TokenData,
+    inbound_fees: bool,
+    is_buy: bool,
+    input_val: u128,
+    swap_rate: u128,
+    base_rate: u128,
+    extra_decimals: u128,
+    merchant: bool,
+) -> FnResult<u64, ProgramError> {
     let mut top_pow: bool = false; // Use extra_decimals for actual value
     let mut btm_pow: bool = false;
-    if td.fees_bps > 0 {
-        let mut fee_1 = input_val.checked_mul(td.fees_bps as u128).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+    let fees_bps: u32 = if merchant { 0 } else { td.fees_bps };
+    if fees_bps > 0 {
+        let mut fee_1 = input_val.checked_mul(fees_bps as u128).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         fee_1 = fee_1.checked_div(10000).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         if inbound_fees { // Fees on inbound token
             if td.oracle_rates && is_buy {
@@ -1056,11 +1075,12 @@ pub mod swap_contract {
         let mut merchant_revenue: u64 = 0;
         let mut merchant_offset: usize = 0;
         let mut merchant_tx_id: u64 = 0;
-        /*if inp_merchant_swap {
+        if inp_merchant {
             msg!("Merchant Swap");
-            if tkdata.oracle_rates || sw.oracle_verify {
+            if current_data.oracle_rates || sw.oracle_verify {
                 merchant_offset = 1;
             }
+            let acc_auth = &ctx.accounts.auth_data.to_account_info();
             let acc_mrch_approval = ctx.remaining_accounts.get(merchant_offset).unwrap();
             let netauth_role = has_role(&acc_auth, Role::NetworkAuth, acc_mrch_approval.owner);
             if netauth_role.is_err() {
@@ -1074,17 +1094,13 @@ pub mod swap_contract {
                 return Err(ErrorCode::AccessDenied.into());
             }
             let (mrch_token, _bump_seed) = Pubkey::find_program_address(
-                &[
-                    mrch_approval.merchant_key.as_ref(),
-                    Token::id().as_ref(),
-                    mrch_approval.token_mint.as_ref(),
-                ],
+                &[mrch_approval.merchant_key.as_ref(), Token::id().as_ref(), mrch_approval.token_mint.as_ref()],
                 &AssociatedToken::id(),
             );
             verify_matching_accounts(acc_inb_token_src.key, &mrch_token, Some(String::from("Invalid merchant associated token")))?;
             merchant_revenue = mrch_approval.revenue;
             //msg!("Atellix: Merchant Revenue: {}", merchant_revenue.to_string());
-        }*/
+        }
 
         let mut oracle_val: f64 = 0.0;
         let mut oracle_log_inuse: bool = false;
@@ -1129,7 +1145,7 @@ pub mod swap_contract {
         calculate_rates(current_data, sw, &mut swap_rate, &mut base_rate, &mut extra_decimals, oracle_log_val)?;
         //msg!("Atellix: Rates - Swap: {} Base: {}", swap_rate.to_string(), base_rate.to_string());
         let input_val: u128 = inp_tokens as u128;
-        let result: u128 = calculate_swap(current_data, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals)?;
+        let result: u128 = calculate_swap(current_data, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals, inp_merchant)?;
         //msg!("Atellix: Result: {}", result.to_string());
 
         let tokens_inb: u64;
@@ -1143,18 +1159,18 @@ pub mod swap_contract {
         }
 
         let inbound_fees = (sw.fees_inbound && inp_swap_direction) || (!sw.fees_inbound && !inp_swap_direction);
-        let tokens_fee: u64 = calculate_fee(current_data, inbound_fees, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals)?;
+        let tokens_fee: u64 = calculate_fee(current_data, inbound_fees, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals, inp_merchant)?;
 
-        /*msg!("Atellix: Inb: {} Out: {}", tokens_inb.to_string(), tokens_out.to_string());
+        msg!("Atellix: Inb: {} Out: {}", tokens_inb.to_string(), tokens_out.to_string());
         if inbound_fees {
             msg!("Atellix: Fee Inb: {}", tokens_fee.to_string());
         } else {
             msg!("Atellix: Fee Out: {}", tokens_fee.to_string());
-        }*/
+        }
 
-        /*if sw.merchant_only {
+        if inp_merchant {
             if tokens_inb > merchant_revenue {
-                msg!("Atellix: Inbound token exceeds merchant balance");
+                msg!("Inbound token exceeds merchant balance");
                 return Err(ErrorCode::Overflow.into());
             }
 
@@ -1179,7 +1195,7 @@ pub mod swap_contract {
             let mut aprv_data: &[u8] = &acc_mrch_approval.try_borrow_data()?;
             let mrch_approval = MerchantApproval::try_deserialize(&mut aprv_data)?;
             merchant_tx_id = mrch_approval.tx_count;
-        }*/
+        }
 
         //msg!("Atellix: Available Outbound Tokens: {}", out_info.amount.to_string());
         //msg!("Atellix: New Inbound Amount: {}", inb_info.amount.to_string());
@@ -1422,7 +1438,8 @@ pub struct Swap<'info> {
     pub out_token_dst: UncheckedAccount<'info>,
     #[account(mut)]
     pub fees_token: UncheckedAccount<'info>,
-    pub token_program: Program<'info, Token>,
+    #[account(address = token::ID)]
+    pub token_program: UncheckedAccount<'info>,
 }
 
 #[derive(Default, Copy, Clone, AnchorDeserialize, AnchorSerialize)]
