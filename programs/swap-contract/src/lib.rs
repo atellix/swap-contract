@@ -1161,12 +1161,12 @@ pub mod swap_contract {
         let inbound_fees = (sw.fees_inbound && inp_swap_direction) || (!sw.fees_inbound && !inp_swap_direction);
         let tokens_fee: u64 = calculate_fee(current_data, inbound_fees, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals, inp_merchant)?;
 
-        /*msg!("Atellix: Inb: {} Out: {}", tokens_inb.to_string(), tokens_out.to_string());
+        msg!("Atellix: Inb: {} Out: {}", tokens_inb.to_string(), tokens_out.to_string());
         if inbound_fees {
             msg!("Atellix: Fee Inb: {}", tokens_fee.to_string());
         } else {
             msg!("Atellix: Fee Out: {}", tokens_fee.to_string());
-        }*/
+        }
 
         if inp_merchant {
             if tokens_inb > merchant_revenue {

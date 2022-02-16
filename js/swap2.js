@@ -82,6 +82,9 @@ async function main() {
 
     const tokData1 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint1)
     const tokData2 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint2)
+    console.log('Token Vaults')
+    console.log(tokData1)
+    console.log(tokData2)
 
     console.log('Swap: ' + swapSpec.swapData)
     const userToken1 = await associatedTokenAddress(provider.wallet.publicKey, tokenMint1)
@@ -110,9 +113,9 @@ async function main() {
         tokData2.nonce,         // outbound vault nonce
         true,                   // swap direction
         false,                  // merchant swap
-        false,                  // is buy order
+        true,                   // is buy order
         //new anchor.BN(10 ** 9),
-        new anchor.BN(1 * (10**9)),
+        new anchor.BN(100 * 10000),
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
