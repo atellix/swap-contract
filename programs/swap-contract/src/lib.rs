@@ -18,7 +18,7 @@ use net_authority::{ cpi::accounts::RecordRevenue, MerchantApproval };
 extern crate slab_alloc;
 use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, SlabVec, SlabTreeError };
 
-declare_id!("5GcGS7ZaPopwYd7bNhUsuZjhAV8Y3anddXLFVrYY9PVx");
+declare_id!("6GHsmynfJxQMY65rEspjacpXDPPmwQqJbdFhxfZEG2zz");
 
 pub const VERSION_MAJOR: u32 = 1;
 pub const VERSION_MINOR: u32 = 0;
@@ -400,7 +400,6 @@ pub mod swap_contract {
     pub fn initialize(ctx: Context<Initialize>) -> ProgramResult {
         let rt = &mut ctx.accounts.root_data;
         rt.root_authority = ctx.accounts.auth_data.key();
-        rt.active = true;
 
         let auth_data: &mut[u8] = &mut ctx.accounts.auth_data.try_borrow_mut_data()?;
         let rd = SlabPageAlloc::new(auth_data);
@@ -659,27 +658,31 @@ pub mod swap_contract {
         Ok(())
     }
 
-/*    pub fn update_swap(ctx: Context<UpdateSwap>,
-        inp_root_nonce: u8,         // RootData nonce
+    pub fn update_swap(ctx: Context<UpdateSwap>,
+        _inp_root_nonce: u8,        // RootData nonce
+        _inp_swpd_nonce: u8,        // SwapData nonce
         inp_locked: bool,           // Lock / unlock
         inp_oracle_verify: bool,    // Use oracle to verify price range (to check peg stability on stablecoins)
         inp_verify_min: u64,        // Minimum of price range (0 for unused)
         inp_verify_max: u64,        // Maximum of price range (0 for unused)
+        inp_swap_direction: bool,   // Swap direction (true == inb, false = out)
+        inp_basis_rates: bool,      // Use basis rates
+        inp_oracle_rates: bool,     // Use oracle rates
+        inp_oracle_max: bool,       // Use oracle max
+        inp_oracle_inverse: bool,   // Oracle inverse
         inp_swap_rate: u64,         // Swap rate
         inp_base_rate: u64,         // Base rate
         inp_fees_bps: u32,          // Fees basis points
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // SwapUpdate role
-        let acc_root = &ctx.accounts.root_data.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
-
-        // Verify program data
-        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
-            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
-        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
-        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
+        let acc_inb = &ctx.accounts.inb_mint.to_account_info();
+        let acc_out = &ctx.accounts.out_mint.to_account_info();
 
         let sw = &mut ctx.accounts.swap_data;
+        verify_matching_accounts(acc_inb.key, &sw.inb_mint, Some(String::from("Invalid inbound mint")))?;
+        verify_matching_accounts(acc_out.key, &sw.out_mint, Some(String::from("Invalid outbound mint")))?;
+
         if sw.locked && ! inp_locked { // Unlock operation (only SwapAdmin)
             let admin_role = has_role(&acc_auth, Role::SwapAdmin, acc_admn.key);
             if admin_role.is_err() {
@@ -701,9 +704,14 @@ pub mod swap_contract {
         sw.oracle_verify = inp_oracle_verify;
         sw.oracle_verify_min = inp_verify_min;
         sw.oracle_verify_max = inp_verify_max;
-        sw.rate_swap = inp_swap_rate;
-        sw.rate_base = inp_base_rate;
-        sw.fees_bps = inp_fees_bps;
+        let current_side = if inp_swap_direction { &mut sw.inb_token_data } else { &mut sw.out_token_data };
+        current_side.basis_rates = inp_basis_rates;
+        current_side.oracle_rates = inp_oracle_rates;
+        current_side.oracle_max = inp_oracle_max;
+        current_side.oracle_inverse = inp_oracle_inverse;
+        current_side.rate_swap = inp_swap_rate;
+        current_side.rate_base = inp_base_rate;
+        current_side.fees_bps = inp_fees_bps;
 
         Ok(())
     }
@@ -711,7 +719,6 @@ pub mod swap_contract {
     pub fn update_swap_active(ctx: Context<UpdateSwap>,
         inp_root_nonce: u8,         // RootData nonce
         inp_active: bool,           // Active flag
-        inp_global: bool,           // Global setting
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // SwapAbort or SwapAdmin role
         let acc_root = &ctx.accounts.root_data.to_account_info();
@@ -740,24 +747,18 @@ pub mod swap_contract {
         let sw = &mut ctx.accounts.swap_data;
         sw.active = inp_active;
 
-        if inp_global {
-            let rt = &mut ctx.accounts.root_data;
-            rt.active = inp_active;
-        }
-
         Ok(())
-    }*/
+    }
 
     pub fn mint_deposit(ctx: Context<MintDeposit>,
-        inp_root_nonce: u8,         // RootData nonce
-        inp_tinf_nonce: u8,         // Token Info nonce
+        _inp_root_nonce: u8,        // RootData nonce
+        _inp_swpd_nonce: u8,        // Token Info nonce
         inp_tokn_nonce: u8,         // Associated token nonce
         inp_amount: u64,            // Amount to mint
         inp_inbound_token: bool,    // Apply to inbound token (otherwise outbound)
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
         let acc_tadm = &ctx.accounts.token_admin.to_account_info(); // Token mint authority
-        let acc_root = &ctx.accounts.root_data.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let acc_prog = &ctx.accounts.token_program.to_account_info();
         let acc_tokn = &ctx.accounts.swap_token.to_account_info();
@@ -770,27 +771,18 @@ pub mod swap_contract {
             return Err(ErrorCode::AccessDenied.into());
         }
 
+        // Verify swap associated token
         let acc_mint;
         if inp_inbound_token {
             acc_mint = ctx.accounts.inb_mint.to_account_info();
         } else {
             acc_mint = ctx.accounts.out_mint.to_account_info();
         }
-
-        // Verify swap associated token
         let derived_key = Pubkey::create_program_address(
-            &[
-                &acc_root.key.to_bytes(),
-                &Token::id().to_bytes(),
-                &acc_mint.key.to_bytes(),
-                &[inp_tokn_nonce]
-            ],
+            &[&ctx.accounts.swap_data.to_account_info().key.to_bytes(), &Token::id().to_bytes(), &acc_mint.key.to_bytes(), &[inp_tokn_nonce]],
             &AssociatedToken::id(),
         ).map_err(|_| ErrorCode::InvalidDerivedAccount)?;
-        if derived_key != *acc_tokn.key {
-            msg!("Invalid token account");
-            return Err(ErrorCode::InvalidDerivedAccount.into());
-        }
+        verify_matching_accounts(acc_tokn.key, &derived_key, Some(String::from("Invalid swap token vault")))?;
 
         let clock = Clock::get()?;
         let sw = &mut ctx.accounts.swap_data;
@@ -828,7 +820,7 @@ pub mod swap_contract {
             slot: clock.slot,
             user: acc_admn.key(),
             inbound_token: inp_inbound_token,
-            swap_data: acc_info.key(),
+            swap_data: ctx.accounts.swap_data.key(),
             token_acct: Pubkey::default(),
             deposit: true,
             transfer: false,
@@ -846,7 +838,6 @@ pub mod swap_contract {
         inp_amount: u64,            // Amount to mint
         inp_inbound_token: bool,    // Apply to inbound token (otherwise outbound)
     ) -> ProgramResult {
-        let acc_root = &ctx.accounts.root_data.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
         let acc_tadm = &ctx.accounts.token_admin.to_account_info(); // Token mint or transfer authority
@@ -864,20 +855,17 @@ pub mod swap_contract {
         }
 
         // Verify swap associated token
-        let derived_key;
+        let acc_mint;
         if inp_inbound_token {
-            derived_key = Pubkey::create_program_address(
-                &[&acc_root.key.to_bytes(), &Token::id().to_bytes(), &acc_inb.key.to_bytes(), &[inp_tokn_nonce]], &AssociatedToken::id()
-            ).map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+            acc_mint = ctx.accounts.inb_mint.to_account_info();
         } else {
-            derived_key = Pubkey::create_program_address(
-                &[&acc_root.key.to_bytes(), &Token::id().to_bytes(), &acc_out.key.to_bytes(), &[inp_tokn_nonce]], &AssociatedToken::id()
-            ).map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+            acc_mint = ctx.accounts.out_mint.to_account_info();
         }
+        let derived_key = Pubkey::create_program_address(
+            &[&ctx.accounts.swap_data.to_account_info().key.to_bytes(), &Token::id().to_bytes(), &acc_mint.key.to_bytes(), &[inp_tokn_nonce]],
+            &AssociatedToken::id(),
+        ).map_err(|_| ErrorCode::InvalidDerivedAccount)?;
         verify_matching_accounts(acc_tokn.key, &derived_key, Some(String::from("Invalid swap token vault")))?;
-
-        verify_matching_accounts(acc_inb.key, &sw.inb_mint, Some(String::from("Invalid inbound mint")))?;
-        verify_matching_accounts(acc_out.key, &sw.out_mint, Some(String::from("Invalid outbound mint")))?;
 
         //msg!("Atellix: Attempt transfer deposit: {}", inp_amount.to_string());
         let cpi_accounts = Transfer {
@@ -891,6 +879,8 @@ pub mod swap_contract {
 
         let clock = Clock::get()?;
         let sw = &mut ctx.accounts.swap_data;
+        verify_matching_accounts(acc_inb.key, &sw.inb_mint, Some(String::from("Invalid inbound mint")))?;
+        verify_matching_accounts(acc_out.key, &sw.out_mint, Some(String::from("Invalid outbound mint")))?;
 
         let new_total;
         if inp_inbound_token { 
@@ -924,36 +914,27 @@ pub mod swap_contract {
         Ok(())
     }
 
-/*    pub fn withdraw(ctx: Context<Withdraw>,
-        inp_root_nonce: u8,         // RootData nonce
-        inp_tinf_nonce: u8,         // Token Info nonce
+    pub fn withdraw(ctx: Context<Withdraw>,
+        _inp_root_nonce: u8,         // RootData nonce
+        inp_swpd_nonce: u8,         // SwapData nonce
         inp_tokn_nonce: u8,         // Associated token nonce
         inp_amount: u64,            // Amount to mint
+        inp_inbound_token: bool,    // Apply to inbound token (otherwise outbound)
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
-        let acc_root = &ctx.accounts.root_data.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
-        let acc_info = &ctx.accounts.token_info.to_account_info();
-        let acc_mint = &ctx.accounts.token_mint.to_account_info();
         let acc_tdst = &ctx.accounts.token_dst.to_account_info();
         let acc_prog = &ctx.accounts.token_program.to_account_info();
+        let acc_swap = &ctx.accounts.swap_data.to_account_info();
         let acc_tokn = &ctx.accounts.swap_token.to_account_info();
+        let acc_inb = &ctx.accounts.inb_mint.to_account_info();
+        let acc_out = &ctx.accounts.out_mint.to_account_info();
         
-        // Verify program data
-        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
-            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
-        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
-        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
-
         let admin_role = has_role(&acc_auth, Role::SwapWithdraw, acc_admn.key);
         if admin_role.is_err() {
             msg!("No swap withdraw role");
             return Err(ErrorCode::AccessDenied.into());
         }
-        let acc_tinf_expected = Pubkey::create_program_address(&[acc_mint.key.as_ref(), &[inp_tinf_nonce]], ctx.program_id)
-            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
-        verify_matching_accounts(acc_info.key, &acc_tinf_expected, Some(String::from("Invalid token info")))?;
-        verify_matching_accounts(acc_mint.key, &ctx.accounts.token_info.mint, Some(String::from("Invalid token mint")))?;
 
         // Verify withdrawal permit
         let permit_role = has_role(&acc_auth, Role::SwapPermit, acc_tdst.key);
@@ -963,72 +944,86 @@ pub mod swap_contract {
         }
 
         // Verify swap associated token
-        let spl_token: Pubkey = Pubkey::from_str(SPL_TOKEN).unwrap();
-        let asc_token: Pubkey = Pubkey::from_str(ASC_TOKEN).unwrap();
-        let derived_key = Pubkey::create_program_address(
-            &[
-                &acc_root.key.to_bytes(),
-                &spl_token.to_bytes(),
-                &acc_mint.key.to_bytes(),
-                &[inp_tokn_nonce]
-            ],
-            &asc_token
-        ).map_err(|_| ErrorCode::InvalidDerivedAccount)?;
-        if derived_key != *acc_tokn.key {
-            msg!("Invalid token account");
-            return Err(ErrorCode::InvalidDerivedAccount.into());
+        let acc_mint;
+        if inp_inbound_token {
+            acc_mint = ctx.accounts.inb_mint.to_account_info();
+        } else {
+            acc_mint = ctx.accounts.out_mint.to_account_info();
         }
+        let derived_key = Pubkey::create_program_address(
+            &[&ctx.accounts.swap_data.to_account_info().key.to_bytes(), &Token::id().to_bytes(), &acc_mint.key.to_bytes(), &[inp_tokn_nonce]],
+            &AssociatedToken::id(),
+        ).map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        verify_matching_accounts(acc_tokn.key, &derived_key, Some(String::from("Invalid swap token vault")))?;
 
         msg!("Atellix: Attempt withdraw: {}", inp_amount.to_string());
+        let swap_seeds = &[
+            ctx.accounts.inb_mint.to_account_info().key.as_ref(),
+            ctx.accounts.out_mint.to_account_info().key.as_ref(),
+            &[inp_swpd_nonce],
+        ];
+        let swap_signer = &[&swap_seeds[..]];
         let cpi_accounts = Transfer {
             from: acc_tokn.clone(),
             to: acc_tdst.clone(),
-            authority: ctx.accounts.root_data.to_account_info(),
+            authority: ctx.accounts.swap_data.to_account_info(),
         };
         let cpi_program = acc_prog.clone();
-        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, swap_signer);
         token::transfer(cpi_ctx, inp_amount)?;
 
         let clock = Clock::get()?;
-        ctx.accounts.token_info.amount = ctx.accounts.token_info.amount.checked_sub(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        ctx.accounts.token_info.token_tx_count = ctx.accounts.token_info.token_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        ctx.accounts.token_info.slot = clock.slot;
+        let sw = &mut ctx.accounts.swap_data;
+        verify_matching_accounts(acc_inb.key, &sw.inb_mint, Some(String::from("Invalid inbound mint")))?;
+        verify_matching_accounts(acc_out.key, &sw.out_mint, Some(String::from("Invalid outbound mint")))?;
 
-        msg!("Atellix: New token amount: {}", ctx.accounts.token_info.amount.to_string());
+        let new_total;
+        if inp_inbound_token { 
+            let mut ti = sw.inb_token_data;
+            ti.amount = ti.amount.checked_sub(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            sw.inb_token_data = ti;
+            new_total = ti.amount;
+        } else {
+            let mut ti = sw.out_token_data;
+            ti.amount = ti.amount.checked_sub(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            sw.out_token_data = ti;
+            new_total = ti.amount;
+        }
+        sw.slot = clock.slot;
+
         msg!("atellix-log");
         emit!(TransferEvent {
             event_hash: 107672350896016821143127613886765419987, // solana/program/atx-swap-contract/withdraw
             slot: clock.slot,
             user: acc_admn.key(),
-            token_info: acc_info.key(),
+            inbound_token: inp_inbound_token,
+            swap_data: acc_swap.key(),
             token_acct: acc_tdst.key(),
             deposit: false,
             transfer: true,
             amount: inp_amount,
-            new_total: ctx.accounts.token_info.amount,
+            new_total: new_total,
         });
 
         Ok(())
-    } */
+    }
 
     pub fn swap<'info>(ctx: Context<'_, '_, '_, 'info, Swap<'info>>,
-        inp_root_nonce: u8,
+        inp_swpd_nonce: u8,         // SwapData nonce
         inp_inb_nonce: u8,          // Associated token nonce for inb_token_dst
         inp_out_nonce: u8,          // Associated token nonce for out_token_src
+        inp_root_nonce: u8,         // RootData nonce (merchant only)
         inp_swap_direction: bool,   // true = "Mint": Inbound -> Outbound ; false = "Burn": Outbound -> Inbound
         inp_merchant: bool,         // Merchant swap
         inp_is_buy: bool,           // Is "Buy" order, otherwise its a "Sell" order
                                     // Buy orders receive X out tokens, Sell orders send X inb tokens
         inp_tokens: u64,            // Number of tokens to send/receive (X tokens)
     ) -> ProgramResult {
-        let acc_root = &ctx.accounts.root_data.to_account_info();
-        //let acc_auth = &ctx.accounts.auth_data.to_account_info();
 
         // Verify swap token info and fees token
         let acc_fee = &ctx.accounts.fees_token.to_account_info();
         let sw = &ctx.accounts.swap_data;
-        let rt = &ctx.accounts.root_data;
-        if !(sw.active && rt.active) {
+        if !sw.active {
             msg!("Inactive swap");
             return Err(ErrorCode::AccessDenied.into());
         }
@@ -1056,7 +1051,7 @@ pub mod swap_contract {
             current_data = out_data;
         }
         let derived_key_in = Pubkey::create_program_address(
-            &[&acc_root.key.to_bytes(), &Token::id().to_bytes(), &src_mint.to_bytes(), &[inp_inb_nonce]],
+            &[&ctx.accounts.swap_data.to_account_info().key.to_bytes(), &Token::id().to_bytes(), &src_mint.to_bytes(), &[inp_inb_nonce]],
             &AssociatedToken::id(),
         ).map_err(|_| {
             msg!("Invalid inbound token destination account nonce");
@@ -1069,7 +1064,7 @@ pub mod swap_contract {
 
         // Verify outbound src associated token
         let derived_key_out = Pubkey::create_program_address(
-            &[&acc_root.key.to_bytes(), &Token::id().to_bytes(), &dst_mint.to_bytes(), &[inp_out_nonce]],
+            &[&ctx.accounts.swap_data.to_account_info().key.to_bytes(), &Token::id().to_bytes(), &dst_mint.to_bytes(), &[inp_out_nonce]],
             &AssociatedToken::id(),
         ).map_err(|_| {
             msg!("Invalid outbound token source account nonce");
@@ -1089,8 +1084,8 @@ pub mod swap_contract {
             if current_data.oracle_rates || sw.oracle_verify {
                 merchant_offset = 1;
             }
-            let acc_auth = &ctx.accounts.auth_data.to_account_info();
-            let acc_mrch_approval = ctx.remaining_accounts.get(merchant_offset).unwrap();
+            let acc_auth = ctx.remaining_accounts.get(merchant_offset).unwrap();
+            let acc_mrch_approval = ctx.remaining_accounts.get(merchant_offset + 2).unwrap();
             let netauth_role = has_role(&acc_auth, Role::NetworkAuth, acc_mrch_approval.owner);
             if netauth_role.is_err() {
                 msg!("Invalid network authority");
@@ -1170,12 +1165,12 @@ pub mod swap_contract {
         let inbound_fees = (sw.fees_inbound && inp_swap_direction) || (!sw.fees_inbound && !inp_swap_direction);
         let tokens_fee: u64 = calculate_fee(current_data, inbound_fees, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals, inp_merchant)?;
 
-        msg!("Atellix: Inb: {} Out: {}", tokens_inb.to_string(), tokens_out.to_string());
+        /*msg!("Atellix: Inb: {} Out: {}", tokens_inb.to_string(), tokens_out.to_string());
         if inbound_fees {
             msg!("Atellix: Fee Inb: {}", tokens_fee.to_string());
         } else {
             msg!("Atellix: Fee Out: {}", tokens_fee.to_string());
-        }
+        }*/
 
         if inp_merchant {
             if tokens_inb > merchant_revenue {
@@ -1184,23 +1179,20 @@ pub mod swap_contract {
             }
 
             // Record merchant revenue
-            let seeds = &[ctx.program_id.as_ref(), &[inp_root_nonce]];
-            let signer = &[&seeds[..]];
-            let na_program = ctx.remaining_accounts.get(merchant_offset + 1).unwrap(); // NetAuthority Program
+            let root_seeds = &[ctx.program_id.as_ref(), &[inp_root_nonce]];
+            let root_signer = &[&root_seeds[..]];
+            let na_program = ctx.remaining_accounts.get(merchant_offset).unwrap(); // NetAuthority Program
             let na_accounts = RecordRevenue {
-                root_data: ctx.remaining_accounts.get(merchant_offset + 2).unwrap().clone(), // NetAuthority Root Data
-                auth_data: ctx.remaining_accounts.get(merchant_offset + 3).unwrap().clone(), // NetAuthority Auth Data
-                revenue_admin: ctx.accounts.root_data.to_account_info(),
-                merchant_approval: ctx.remaining_accounts.get(merchant_offset).unwrap().clone(),
+                revenue_admin: ctx.remaining_accounts.get(merchant_offset + 1).unwrap().clone(), // NetAuthority Root Data
+                merchant_approval: ctx.remaining_accounts.get(merchant_offset + 2).unwrap().clone(),
             };
-            let na_ctx = CpiContext::new_with_signer(na_program.clone(), na_accounts, signer);
-            let (_addr, net_nonce) = Pubkey::find_program_address(&[na_program.key.as_ref()], na_program.key);
+            let na_ctx = CpiContext::new_with_signer(na_program.clone(), na_accounts, root_signer);
  
             //msg!("Atellix: Attempt to record revenue withdrawal");
-            net_authority::cpi::record_revenue(na_ctx, net_nonce, false, tokens_inb)?;
+            net_authority::cpi::record_revenue(na_ctx, false, tokens_inb)?;
 
             // Reload data after CPI call
-            let acc_mrch_approval = ctx.remaining_accounts.get(merchant_offset).unwrap();
+            let acc_mrch_approval = ctx.remaining_accounts.get(merchant_offset + 2).unwrap();
             let mut aprv_data: &[u8] = &acc_mrch_approval.try_borrow_data()?;
             let mrch_approval = MerchantApproval::try_deserialize(&mut aprv_data)?;
             merchant_tx_id = mrch_approval.tx_count;
@@ -1209,6 +1201,13 @@ pub mod swap_contract {
         //msg!("Atellix: Available Outbound Tokens: {}", out_info.amount.to_string());
         //msg!("Atellix: New Inbound Amount: {}", inb_info.amount.to_string());
         //msg!("Atellix: New Outbound Amount: {}", out_info.amount.to_string());
+
+        let swap_seeds = &[
+            sw.inb_mint.as_ref(),
+            sw.out_mint.as_ref(),
+            &[inp_swpd_nonce],
+        ];
+        let swap_signer = &[&swap_seeds[..]];
 
         let in_accounts = Transfer {
             from: acc_inb_token_src,
@@ -1220,50 +1219,35 @@ pub mod swap_contract {
         //msg!("Atellix: Attempt Inbound Transfer");
         token::transfer(in_ctx, tokens_inb)?;
 
-        let out_seeds = &[
-            ctx.program_id.as_ref(),
-            &[inp_root_nonce],
-        ];
-        let out_signer = &[&out_seeds[..]];
         let out_accounts = Transfer {
             from: acc_out_token_src,
             to: acc_out_token_dst,
-            authority: ctx.accounts.root_data.to_account_info(),
+            authority: ctx.accounts.swap_data.to_account_info(),
         };
         let cpi_prog2 = ctx.accounts.token_program.to_account_info();
-        let out_ctx = CpiContext::new_with_signer(cpi_prog2, out_accounts, out_signer);
+        let out_ctx = CpiContext::new_with_signer(cpi_prog2, out_accounts, swap_signer);
         //msg!("Atellix: Attempt Outbound Transfer");
         token::transfer(out_ctx, tokens_out)?;
 
         if tokens_fee > 0 {
             if inbound_fees {
-                let fees_seeds = &[
-                    ctx.program_id.as_ref(),
-                    &[inp_root_nonce],
-                ];
-                let fees_signer = &[&fees_seeds[..]];
                 let fees_accounts = Transfer {
                     from: ctx.accounts.inb_token_dst.to_account_info(),
                     to: ctx.accounts.fees_token.to_account_info(),
-                    authority: ctx.accounts.root_data.to_account_info(),
+                    authority: ctx.accounts.swap_data.to_account_info(),
                 };
                 let cpi_prog = ctx.accounts.token_program.to_account_info();
-                let fees_ctx = CpiContext::new_with_signer(cpi_prog, fees_accounts, fees_signer);
+                let fees_ctx = CpiContext::new_with_signer(cpi_prog, fees_accounts, swap_signer);
                 //msg!("Atellix: Attempt Fees Transfer - Inbound Token");
                 token::transfer(fees_ctx, tokens_fee)?;
             } else {
-                let fees_seeds = &[
-                    ctx.program_id.as_ref(),
-                    &[inp_root_nonce],
-                ];
-                let fees_signer = &[&fees_seeds[..]];
                 let fees_accounts = Transfer {
                     from: ctx.accounts.out_token_src.to_account_info(),
                     to: ctx.accounts.fees_token.to_account_info(),
-                    authority: ctx.accounts.root_data.to_account_info(),
+                    authority: ctx.accounts.swap_data.to_account_info(),
                 };
                 let cpi_prog = ctx.accounts.token_program.to_account_info();
-                let fees_ctx = CpiContext::new_with_signer(cpi_prog, fees_accounts, fees_signer);
+                let fees_ctx = CpiContext::new_with_signer(cpi_prog, fees_accounts, swap_signer);
                 //msg!("Atellix: Attempt Fees Transfer - Outbound Token");
                 token::transfer(fees_ctx, tokens_fee)?;
             }
@@ -1356,15 +1340,19 @@ pub struct CreateSwap<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/*#[derive(Accounts)]
+#[derive(Accounts)]
+#[instruction(_inp_root_nonce: u8, _inp_swpd_nonce: u8)]
 pub struct UpdateSwap<'info> {
+    #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
-    pub auth_data: AccountInfo<'info>,
-    #[account(signer)]
-    pub swap_admin: AccountInfo<'info>,
-    #[account(mut)]
+    #[account(constraint = root_data.root_authority == auth_data.key())]
+    pub auth_data: UncheckedAccount<'info>,
+    #[account(mut, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref()], bump = _inp_swpd_nonce)]
     pub swap_data: Account<'info, SwapData>,
-}*/
+    pub swap_admin: Signer<'info>,
+    pub inb_mint: UncheckedAccount<'info>,
+    pub out_mint: UncheckedAccount<'info>,
+}
 
 #[derive(Accounts)]
 #[instruction(_inp_root_nonce: u8, _inp_swpd_nonce: u8)]
@@ -1408,36 +1396,31 @@ pub struct TransferDeposit<'info> {
     pub token_program: AccountInfo<'info>,
 }
 
-/*#[derive(Accounts)]
-pub struct Withdraw<'info> {
-    pub root_data: Account<'info, RootData>,
-    pub auth_data: AccountInfo<'info>,
-    #[account(signer)]
-    pub swap_admin: AccountInfo<'info>,
-    #[account(mut)]
-    pub swap_token: AccountInfo<'info>,
-    #[account(signer)]
-    pub token_admin: AccountInfo<'info>,
-    #[account(mut)]
-    pub token_mint: AccountInfo<'info>,
-    #[account(mut)]
-    pub token_info: Account<'info, TokenData>,
-    #[account(mut)]
-    pub token_dst: AccountInfo<'info>,
-    #[account(address = token::ID)]
-    pub token_program: AccountInfo<'info>,
-} */
-
 #[derive(Accounts)]
-#[instruction(inp_root_nonce: u8)]
-pub struct Swap<'info> {
-    #[account(seeds = [program_id.as_ref()], bump = inp_root_nonce)]
+#[instruction(_inp_root_nonce: u8, inp_swpd_nonce: u8)]
+pub struct Withdraw<'info> {
+    #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
     #[account(constraint = root_data.root_authority == auth_data.key())]
     pub auth_data: UncheckedAccount<'info>,
-    pub swap_user: Signer<'info>,
+    #[account(mut)]
+    pub swap_token: Account<'info, TokenAccount>,
+    #[account(mut, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref()], bump = inp_swpd_nonce)]
+    pub swap_data: Account<'info, SwapData>,
+    pub swap_admin: Signer<'info>,
+    pub inb_mint: UncheckedAccount<'info>,
+    pub out_mint: UncheckedAccount<'info>,
+    #[account(mut)]
+    pub token_dst: Account<'info, TokenAccount>,
+    #[account(address = token::ID)]
+    pub token_program: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct Swap<'info> {
     #[account(mut)]
     pub swap_data: Account<'info, SwapData>,
+    pub swap_user: Signer<'info>,
     #[account(mut)]
     pub inb_token_src: UncheckedAccount<'info>,
     #[account(mut)]
@@ -1495,20 +1478,11 @@ pub struct SwapData {
 #[account]
 pub struct RootData {
     pub root_authority: Pubkey,
-    pub active: bool,
 }
 
 impl RootData {
-    pub fn active(&self) -> bool {
-        self.active
-    }
-
     pub fn root_authority(&self) -> Pubkey {
         self.root_authority
-    }
-
-    pub fn set_active(&mut self, new_active: bool) {
-        self.active = new_active
     }
 
     pub fn set_root_authority(&mut self, new_authority: Pubkey) {
@@ -1520,7 +1494,6 @@ impl Default for RootData {
     fn default() -> Self {
         Self {
             root_authority: Pubkey::default(),
-            active: true,
         }
     }
 }

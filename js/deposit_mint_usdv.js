@@ -18,40 +18,46 @@ const swapContractPK = swapContract.programId
 
 async function main() {
     const netData = await jsonFileRead('../../data/net.json')
+    const netKeys = await jsonFileRead('../../data/export/network_keys.json')
     const rootData = await programAddress([swapContractPK.toBuffer()], swapContractPK)
-    const tkiBytes = swapContract.account.tokenInfo.size
-    const tkiRent = await provider.connection.getMinimumBalanceForRentExemption(tkiBytes)
 
     var authData
     var authDataPK
+    var usdvMint1
     var swapDepost1
-    var tokenMint = new PublicKey(netData.tokenMintUSDV)
 
     const swapCache = await jsonFileRead('../../data/swap.json')
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
-    swapDeposit1 = importSecretKey(swapCache.swapDeposit1_secret)
+    console.log(netKeys['usdv-mint-1-secret'])
+    usdvMint1 = importSecretKey(netKeys['usdv-mint-1-secret'])
+    swapDeposit1 = importSecretKey(netKeys['swap-deposit-1-secret'])
 
-    const tkiData = await programAddress([tokenMint.toBuffer()], swapContractPK)
-    const tokData = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint)
+    var inbMint = new PublicKey(netData.tokenMintUSDC)
+    var outMint = new PublicKey(netData.tokenMintUSDV)
+
+    const tkiData = await programAddress([inbMint.toBuffer(), outMint.toBuffer()], swapContractPK)
+    const tokData = await associatedTokenAddress(new PublicKey(rootData.pubkey), outMint)
 
     console.log('Deposit: ' + tokData.pubkey)
     let res = await swapContract.rpc.mintDeposit(
         rootData.nonce,
         tkiData.nonce,
         tokData.nonce,
-        new anchor.BN('10000000000000000000'), // One quadrillion
+        new anchor.BN('1000000000000000'),  // One billion
+        false,                              // true = inbound token, false = outbound token
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
                 authData: authDataPK,
                 swapAdmin: swapDeposit1.publicKey,
+                swapData: new PublicKey(tkiData.pubkey),
                 swapToken: new PublicKey(tokData.pubkey),
-                tokenAdmin: provider.wallet.publicKey,
-                tokenMint: tokenMint,
-                tokenInfo: new PublicKey(tkiData.pubkey),
+                tokenAdmin: usdvMint1.publicKey,
+                inbMint: inbMint,
+                outMint: outMint,
                 tokenProgram: TOKEN_PROGRAM_ID,
             },
-            signers: [swapDeposit1],
+            signers: [swapDeposit1, usdvMint1],
         }
     )
     console.log(res)

@@ -26,40 +26,61 @@ async function main() {
     var authData
     var authDataPK
     var swapDepost1
-    var inbMint = new PublicKey('So11111111111111111111111111111111111111112')
+    var inbMint = new PublicKey(netData.tokenMintUSDC)
     var outMint = new PublicKey(netData.tokenMintUSDV)
 
     const swapCache = await jsonFileRead('../../data/swap.json')
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
-    swapDeposit1 = importSecretKey(netKeys['swap-deposit-1-secret'])
-    treasury1 = importSecretKey(netKeys['treasury-1-secret'])
+    swapWithdraw1 = importSecretKey(netKeys['swap-withdraw-1-secret'])
+    destOwner = new PublicKey(provider.wallet.publicKey)
+    destAta = await associatedTokenAddress(destOwner, inbMint)
 
     const tkiData = await programAddress([inbMint.toBuffer(), outMint.toBuffer()], swapContractPK)
-    const tokData = await associatedTokenAddress(new PublicKey(tkiData.pubkey), outMint)
-    const srcToken = await associatedTokenAddress(treasury1.publicKey, outMint)
+    const tokData = await associatedTokenAddress(new PublicKey(rootData.pubkey), inbMint)
+
+    var jsres = await exec('solana program show --output json ' + swapContractPK.toString())
+    var pgres = JSON.parse(jsres.stdout)
+    const programData = pgres.programdataAddress
+
+    if (false) {
+        console.log('Grant: SwapPermit')
+        await swapContract.rpc.grant(
+            rootData.nonce,
+            7, // SwapPermit
+            {
+                accounts: {
+                    program: swapContractPK,
+                    programAdmin: provider.wallet.publicKey,
+                    programData: new PublicKey(programData),
+                    rootData: new PublicKey(rootData.pubkey),
+                    authData: authDataPK,
+                    rbacUser: new PublicKey(destAta.pubkey),
+                },
+            }
+        )
+    }
 
     console.log('Token Info: ' + tkiData.pubkey)
-    console.log('Deposit: ' + tokData.pubkey)
-    let res = await swapContract.rpc.deposit(
+    console.log('Withdraw: ' + tokData.pubkey)
+    let res = await swapContract.rpc.withdraw(
         rootData.nonce,
         tkiData.nonce,
         tokData.nonce,
-        new anchor.BN('100000000000'),  // Ten million (* 10000)
-        false,                          // true = inbound, false = outbound
+        new anchor.BN('25000000'),  // 25 (* 1000000)
+        true,                       // true = inbound, false = outbound
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
                 authData: authDataPK,
-                swapAdmin: swapDeposit1.publicKey,
+                swapAdmin: swapWithdraw1.publicKey,
                 swapData: new PublicKey(tkiData.pubkey),
                 swapToken: new PublicKey(tokData.pubkey),
                 inbMint: inbMint,
                 outMint: outMint,
-                tokenSrc: new PublicKey(srcToken.pubkey),
-                tokenAdmin: treasury1.publicKey,
+                tokenDst: new PublicKey(destAta.pubkey),
                 tokenProgram: TOKEN_PROGRAM_ID,
             },
-            signers: [swapDeposit1, treasury1],
+            signers: [swapWithdraw1],
         }
     )
     console.log(res)

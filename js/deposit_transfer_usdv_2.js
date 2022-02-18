@@ -35,7 +35,7 @@ async function main() {
     treasury1 = importSecretKey(netKeys['treasury-1-secret'])
 
     const tkiData = await programAddress([inbMint.toBuffer(), outMint.toBuffer()], swapContractPK)
-    const tokData = await associatedTokenAddress(new PublicKey(rootData.pubkey), outMint)
+    const tokData = await associatedTokenAddress(new PublicKey(tkiData.pubkey), outMint)
     const srcToken = await associatedTokenAddress(treasury1.publicKey, outMint)
 
     console.log('Token Info: ' + tkiData.pubkey)

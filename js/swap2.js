@@ -77,11 +77,12 @@ async function main() {
     tokenMint1 = new PublicKey(swapSpec.inbMint) // WSOL
     tokenMint2 = new PublicKey(swapSpec.outMint) // USDV
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
-    swapDataPK = new PublicKey(swapSpec.swapData)
+    swapData = await programAddress([tokenMint1.toBuffer(), tokenMint2.toBuffer()], swapContractPK)
+    swapDataPK = new PublicKey(swapData.pubkey)
     feesTK = new PublicKey(swapSpec.feesToken)
 
-    const tokData1 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint1)
-    const tokData2 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint2)
+    const tokData1 = await associatedTokenAddress(swapDataPK, tokenMint1)
+    const tokData2 = await associatedTokenAddress(swapDataPK, tokenMint2)
     console.log('Token Vaults')
     console.log(tokData1)
     console.log(tokData2)
@@ -97,8 +98,6 @@ async function main() {
     })
 
     console.log({
-        rootData: new PublicKey(rootData.pubkey).toString(),
-        authData: authDataPK.toString(),
         swapUser: provider.wallet.publicKey.toString(),
         swapData: swapDataPK.toString(),
         inbTokenSrc: new PublicKey(userToken1.pubkey).toString(),
@@ -108,9 +107,10 @@ async function main() {
         feesToken: feesTK.toString(),
     })
     let apires = await swapContract.rpc.swap(
-        rootData.nonce,         // root nonce
+        swapData.nonce,         // swap data nonce
         tokData1.nonce,         // inbound vault nonce
         tokData2.nonce,         // outbound vault nonce
+        0,                      // root nonce
         true,                   // swap direction
         false,                  // merchant swap
         true,                   // is buy order
@@ -118,8 +118,6 @@ async function main() {
         new anchor.BN(100 * 10000),
         {
             accounts: {
-                rootData: new PublicKey(rootData.pubkey),
-                authData: authDataPK,
                 swapUser: provider.wallet.publicKey,
                 swapData: swapDataPK,
                 inbTokenSrc: new PublicKey(userToken1.pubkey),
