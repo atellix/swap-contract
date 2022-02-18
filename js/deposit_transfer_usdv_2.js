@@ -50,6 +50,7 @@ async function main() {
         tokData.nonce,
         new anchor.BN('100000000000'),  // Ten million (* 10000)
         false,                          // true = inbound, false = outbound
+        new anchor.BN('123'),           // Event uuid
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),

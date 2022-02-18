@@ -18,7 +18,7 @@ use net_authority::{ cpi::accounts::RecordRevenue, MerchantApproval };
 extern crate slab_alloc;
 use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, SlabVec, SlabTreeError };
 
-declare_id!("6GHsmynfJxQMY65rEspjacpXDPPmwQqJbdFhxfZEG2zz");
+declare_id!("325UwbyUcMUYXEkNMEzKSuTB8CanJ8sNDgt2Xmnjb7xe");
 
 pub const VERSION_MAJOR: u32 = 1;
 pub const VERSION_MINOR: u32 = 0;
@@ -643,6 +643,7 @@ pub mod swap_contract {
         sw.tokens_offset = 0;
         sw.cost_basis = 0;
         sw.cost_offset = 0;
+        sw.update_count = 0;
         Ok(())
     }
 
@@ -662,6 +663,7 @@ pub mod swap_contract {
         inp_swap_rate: u64,         // Swap rate
         inp_base_rate: u64,         // Base rate
         inp_fees_bps: u32,          // Fees basis points
+        inp_event_uuid: u128,       // Event UUID
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // SwapUpdate role
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
@@ -689,6 +691,9 @@ pub mod swap_contract {
             }
         }
 
+        let clock = Clock::get()?;
+        sw.slot = clock.slot;
+        sw.update_count = sw.update_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         sw.locked = inp_locked;
         sw.oracle_verify = inp_oracle_verify;
         sw.oracle_verify_min = inp_verify_min;
@@ -702,23 +707,36 @@ pub mod swap_contract {
         current_side.rate_base = inp_base_rate;
         current_side.fees_bps = inp_fees_bps;
 
+        msg!("atellix-log");
+        emit!(TransferEvent {
+            event_hash: 103792147600109876534157869265125382430, // solana/program/atx-swap-contract/update_swap
+            event_uuid: inp_event_uuid,
+            update_id: sw.update_count,
+            slot: clock.slot,
+            user: acc_admn.key(),
+            inbound_token: inp_swap_direction,
+            swap_data: sw.key(),
+            token_acct: Pubkey::default(),
+            asset_acct: Pubkey::default(),
+            amount: 0,
+            new_total: 0,
+            adjust_tokens_offset: 0,
+            adjust_cost_offset: 0,
+            active: sw.active,
+        });
+
         Ok(())
     }
 
     pub fn update_swap_active(ctx: Context<UpdateSwap>,
         _inp_swap_id: u16,          // SwapData Index ID
-        inp_root_nonce: u8,         // RootData nonce
+        _inp_root_nonce: u8,        // RootData nonce
+        _inp_swpd_nonce: u8,        // SwapData nonce
         inp_active: bool,           // Active flag
+        inp_event_uuid: u128,       // Event UUID
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // SwapAbort or SwapAdmin role
-        let acc_root = &ctx.accounts.root_data.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
-
-        // Verify program data
-        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
-            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
-        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
-        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
 
         if inp_active {
             let admin_role = has_role(&acc_auth, Role::SwapAdmin, acc_admn.key);
@@ -734,8 +752,28 @@ pub mod swap_contract {
             }
         }
 
+        let clock = Clock::get()?;
         let sw = &mut ctx.accounts.swap_data;
         sw.active = inp_active;
+        sw.update_count = sw.update_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        sw.slot = clock.slot;
+
+        emit!(TransferEvent {
+            event_hash: 283342772248480963119829605187167420305, // solana/program/atx-swap-contract/update_swap_active
+            event_uuid: inp_event_uuid,
+            update_id: sw.update_count,
+            slot: clock.slot,
+            user: acc_admn.key(),
+            inbound_token: false,
+            swap_data: sw.key(),
+            token_acct: Pubkey::default(),
+            asset_acct: Pubkey::default(),
+            amount: 0,
+            new_total: 0,
+            adjust_tokens_offset: 0,
+            adjust_cost_offset: 0,
+            active: sw.active,
+        });
 
         Ok(())
     }
@@ -747,6 +785,7 @@ pub mod swap_contract {
         inp_tokn_nonce: u8,         // Associated token nonce
         inp_amount: u64,            // Amount to mint
         inp_inbound_token: bool,    // Apply to inbound token (otherwise outbound)
+        inp_event_uuid: u128,       // Event UUID
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
         let acc_tadm = &ctx.accounts.token_admin.to_account_info(); // Token mint authority
@@ -803,20 +842,25 @@ pub mod swap_contract {
             new_total = ti.amount;
         }
         sw.slot = clock.slot;
+        sw.update_count = sw.update_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
 
         //msg!("Atellix: New token amount: {}", ctx.accounts.token_info.amount.to_string());
         msg!("atellix-log");
         emit!(TransferEvent {
             event_hash: 86124742241384372364379956883437878997, // solana/program/atx-swap-contract/deposit_mint
+            event_uuid: inp_event_uuid,
+            update_id: sw.update_count,
             slot: clock.slot,
             user: acc_admn.key(),
             inbound_token: inp_inbound_token,
-            swap_data: ctx.accounts.swap_data.key(),
+            swap_data: sw.key(),
             token_acct: Pubkey::default(),
-            deposit: true,
-            transfer: false,
+            asset_acct: Pubkey::default(),
             amount: inp_amount,
             new_total: new_total,
+            adjust_tokens_offset: 0,
+            adjust_cost_offset: 0,
+            active: sw.active,
         });
 
         Ok(())
@@ -829,6 +873,7 @@ pub mod swap_contract {
         inp_tokn_nonce: u8,         // Associated token nonce
         inp_amount: u64,            // Amount to mint
         inp_inbound_token: bool,    // Apply to inbound token (otherwise outbound)
+        inp_event_uuid: u128,       // Event UUID
     ) -> ProgramResult {
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
@@ -887,20 +932,25 @@ pub mod swap_contract {
             new_total = ti.amount;
         }
         sw.slot = clock.slot;
+        sw.update_count = sw.update_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
 
         //msg!("Atellix: New token amount: {}", new_total.to_string());
         msg!("atellix-log");
         emit!(TransferEvent {
             event_hash: 46880124277820728117333064135303940398, // solana/program/atx-swap-contract/deposit_transfer
+            event_uuid: inp_event_uuid,
+            update_id: sw.update_count,
             slot: clock.slot,
             user: acc_admn.key(),
             inbound_token: inp_inbound_token,
             swap_data: acc_swap.key(),
             token_acct: acc_tsrc.key(),
-            deposit: true,
-            transfer: true,
+            asset_acct: Pubkey::default(),
             amount: inp_amount,
             new_total: new_total,
+            adjust_tokens_offset: 0,
+            adjust_cost_offset: 0,
+            active: sw.active,
         });
 
         Ok(())
@@ -913,6 +963,7 @@ pub mod swap_contract {
         inp_tokn_nonce: u8,         // Associated token nonce
         inp_amount: u64,            // Amount to mint
         inp_inbound_token: bool,    // Apply to inbound token (otherwise outbound)
+        inp_event_uuid: u128,       // Event UUID
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
@@ -985,19 +1036,24 @@ pub mod swap_contract {
             new_total = ti.amount;
         }
         sw.slot = clock.slot;
+        sw.update_count = sw.update_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
 
         msg!("atellix-log");
         emit!(TransferEvent {
             event_hash: 107672350896016821143127613886765419987, // solana/program/atx-swap-contract/withdraw
+            event_uuid: inp_event_uuid,
+            update_id: sw.update_count,
             slot: clock.slot,
             user: acc_admn.key(),
             inbound_token: inp_inbound_token,
             swap_data: acc_swap.key(),
             token_acct: acc_tdst.key(),
-            deposit: false,
-            transfer: true,
+            asset_acct: Pubkey::default(),
             amount: inp_amount,
             new_total: new_total,
+            adjust_tokens_offset: 0,
+            adjust_cost_offset: 0,
+            active: sw.active,
         });
 
         Ok(())
@@ -1474,6 +1530,7 @@ pub struct SwapData {
     pub fees_inbound: bool,             // Use inbound (or alternatively outbound) token for fees
     pub fees_token: Pubkey,             // Fees account
     pub swap_tx_count: u64,             // Transaction index count
+    pub update_count: u64,              // Update count
     pub tokens_outstanding: i128,
     pub tokens_offset: i128,
     pub cost_basis: i128,
@@ -1526,15 +1583,19 @@ pub struct SwapEvent {
 #[event]
 pub struct TransferEvent {
     pub event_hash: u128,
+    pub event_uuid: u128,
+    pub update_id: u64,
     pub slot: u64,
     pub user: Pubkey,
     pub inbound_token: bool, 
     pub swap_data: Pubkey,
     pub token_acct: Pubkey, // The source or destination associated token (or default for mint)
-    pub deposit: bool, // or, withdraw
-    pub transfer: bool, // or, mint
+    pub asset_acct: Pubkey, // The collateral asset management account
     pub amount: u64,
     pub new_total: u64,
+    pub adjust_tokens_offset: i128,
+    pub adjust_cost_offset: i128,
+    pub active: bool,
 }
 
 #[account]
