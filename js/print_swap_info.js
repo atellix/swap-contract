@@ -20,7 +20,7 @@ function showData(spec) {
 }
 
 async function main() {
-    let tki = new PublicKey('9YQVZAzU9FhtucQjX2sZtQUdycW1MXyKC4EpY849NShK')
+    let tki = new PublicKey('HMWRqsaygL2HWkHDVgbdfMppe7Y1SxcpxgKX9qiwCCc2')
     let res = await swapContract.account.swapData.fetch(tki)
     //console.log(res)
     console.log(showData(res))

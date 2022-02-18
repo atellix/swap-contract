@@ -26,6 +26,7 @@ async function main() {
     var authData
     var authDataPK
     var swapDepost1
+    var swapId = 0
     var inbMint = new PublicKey(netData.tokenMintUSDC)
     var outMint = new PublicKey(netData.tokenMintUSDV)
 
@@ -35,7 +36,9 @@ async function main() {
     destOwner = new PublicKey(provider.wallet.publicKey)
     destAta = await associatedTokenAddress(destOwner, inbMint)
 
-    const tkiData = await programAddress([inbMint.toBuffer(), outMint.toBuffer()], swapContractPK)
+    var buf = Buffer.alloc(2)
+    buf.writeInt16LE(swapId)
+    const tkiData = await programAddress([inbMint.toBuffer(), outMint.toBuffer(), buf], swapContractPK)
     const tokData = await associatedTokenAddress(new PublicKey(rootData.pubkey), inbMint)
 
     var jsres = await exec('solana program show --output json ' + swapContractPK.toString())
@@ -63,6 +66,7 @@ async function main() {
     console.log('Token Info: ' + tkiData.pubkey)
     console.log('Withdraw: ' + tokData.pubkey)
     let res = await swapContract.rpc.withdraw(
+        swapId,
         rootData.nonce,
         tkiData.nonce,
         tokData.nonce,

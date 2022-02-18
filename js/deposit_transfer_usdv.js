@@ -28,19 +28,23 @@ async function main() {
     var swapDepost1
     var inbMint = new PublicKey('So11111111111111111111111111111111111111112')
     var outMint = new PublicKey(netData.tokenMintUSDV)
+    var swapId = 0
 
     const swapCache = await jsonFileRead('../../data/swap.json')
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
     swapDeposit1 = importSecretKey(netKeys['swap-deposit-1-secret'])
     treasury1 = importSecretKey(netKeys['treasury-1-secret'])
 
-    const tkiData = await programAddress([inbMint.toBuffer(), outMint.toBuffer()], swapContractPK)
+    var buf = Buffer.alloc(2)
+    buf.writeInt16LE(swapId)
+    const tkiData = await programAddress([inbMint.toBuffer(), outMint.toBuffer(), buf], swapContractPK)
     const tokData = await associatedTokenAddress(new PublicKey(tkiData.pubkey), outMint)
     const srcToken = await associatedTokenAddress(treasury1.publicKey, outMint)
 
     console.log('Token Info: ' + tkiData.pubkey)
     console.log('Deposit: ' + tokData.pubkey)
     let res = await swapContract.rpc.deposit(
+        swapId,
         rootData.nonce,
         tkiData.nonce,
         tokData.nonce,

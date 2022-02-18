@@ -8,140 +8,86 @@ const exec = promisify(require('child_process').exec)
 const fs = require('fs').promises
 const base32 = require("base32.js")
 const anchor = require('@project-serum/anchor')
+const { associatedTokenAddress, programAddress, importSecretKey, exportSecretKey, jsonFileRead, jsonFileWrite } = require('../../js/atellix-common')
 
 const provider = anchor.Provider.env()
 //const provider = anchor.Provider.local()
 anchor.setProvider(provider)
 const swapContract = anchor.workspace.SwapContract
 const swapContractPK = swapContract.programId
-const oraclePK = new PublicKey('DpoK8Zz69APV9ntjuY9C4LZCxANYMV56M2cbXEdkjxME')
-
-const SPL_ASSOCIATED_TOKEN = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
-async function associatedTokenAddress(walletAddress, tokenMintAddress) {
-    const addr = await PublicKey.findProgramAddress(
-        [walletAddress.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), tokenMintAddress.toBuffer()],
-        SPL_ASSOCIATED_TOKEN
-    )
-    const res = { 'pubkey': await addr[0].toString(), 'nonce': addr[1] }
-    return res
-}
-
-async function programAddress(inputs, program = swapContractPK) {
-    const addr = await PublicKey.findProgramAddress(inputs, program)
-    const res = { 'pubkey': await addr[0].toString(), 'nonce': addr[1] }
-    return res
-}
-
-function exportSecretKey(keyPair) {
-    var enc = new base32.Encoder({ type: "crockford", lc: true })
-    return enc.write(keyPair.secretKey).finalize()
-}
-
-function importSecretKey(keyStr) {
-    var dec = new base32.Decoder({ type: "crockford" })
-    var spec = dec.write(keyStr).finalize()
-    return Keypair.fromSecretKey(new Uint8Array(spec))
-}
-
-async function createTokenMint() {
-    var res = await exec('./create_mint.sh')
-    return res.stdout
-}
+//const oraclePK = new PublicKey('DpoK8Zz69APV9ntjuY9C4LZCxANYMV56M2cbXEdkjxME')
 
 async function main() {
-    var ndjs
-    try {
-        ndjs = await fs.readFile('/Users/mfrager/Build/solana/net-authority/js/net.json')
-    } catch (error) {
-        console.error('File Error: ', error)
-    }
-    const netData = JSON.parse(ndjs.toString())
-
-    const rootData = await programAddress([swapContractPK.toBuffer()])
-
-    const feesOwner = anchor.web3.Keypair.generate()
-
+    const netKeys = await jsonFileRead('../../data/export/network_keys.json')
+    const netData = await jsonFileRead('../../data/net.json')
+    const rootData = await programAddress([swapContractPK.toBuffer()], swapContractPK)
+    const feesOwner = new PublicKey(netKeys['swap-fees-1-public'])
     const swapBytes = swapContract.account.swapData.size
     const swapRent = await provider.connection.getMinimumBalanceForRentExemption(swapBytes)
 
     var swapData
     var swapDataPK
-
-    var tokenMint = new PublicKey('HZE3aet4kKEnBdKsTAWcc9Axv6F7p9Yu4rcNJcuxddZr')
     var authData
     var authDataPK
     var swapAdmin1
-    var swapDeposit1
-    var swapWithdraw1
 
-    var ndjs
-    try {
-        spjs = await fs.readFile('/Users/mfrager/Build/solana/swap-contract/js/swap.json')
-    } catch (error) {
-        console.error('File Error: ', error)
-    }
-    const swapCache = JSON.parse(spjs.toString())
+    const swapCache = await jsonFileRead('../../data/swap.json')
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
-    swapAdmin1 = importSecretKey(swapCache.swapAdmin1_secret)
-    swapDeposit1 = importSecretKey(swapCache.swapDeposit1_secret)
-    swapWithdraw1 = importSecretKey(swapCache.swapWithdraw1_secret)
+    swapAdmin1 = importSecretKey(netKeys['swap-data-admin-1-secret'])
 
     var writeData = {}
-
-    var mint1 = '6MBodtA49RtjxnuorEFXrGVqf1R8cHTurLZByzdsn37e' // USDC
-    var mint2 = 'HZE3aet4kKEnBdKsTAWcc9Axv6F7p9Yu4rcNJcuxddZr' // USDV
+    var mint1 = netData.tokenMintUSDV
+    var mint2 = netData.tokenMintUSDC
     console.log("Mints: " + mint1 + " " + mint2)
     tokenMint1 = new PublicKey(mint1)
     tokenMint2 = new PublicKey(mint2)
     writeData['tokenMint1'] = tokenMint1.toString()
     writeData['tokenMint2'] = tokenMint2.toString()
     
-    const tkiData1 = await programAddress([tokenMint1.toBuffer()])
-    const tkiData2 = await programAddress([tokenMint2.toBuffer()])
+    const tkiData1 = await programAddress([tokenMint1.toBuffer()], swapContractPK)
+    const tkiData2 = await programAddress([tokenMint2.toBuffer()], swapContractPK)
     const tokData1 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint1)
     const tokData2 = await associatedTokenAddress(new PublicKey(rootData.pubkey), tokenMint2)
 
     var feesInbound = false
     var feesToken
     if (feesInbound) {
-        feesToken = await associatedTokenAddress(feesOwner.publicKey, tokenMint1)
+        feesToken = await associatedTokenAddress(feesOwner, tokenMint1)
     } else {
-        feesToken = await associatedTokenAddress(feesOwner.publicKey, tokenMint2)
+        feesToken = await associatedTokenAddress(feesOwner, tokenMint2)
     }
 
     swapData = anchor.web3.Keypair.generate()
     swapDataPK = swapData.publicKey
     writeData['swapData'] = swapData.publicKey.toString()
-    writeData['feesOwner'] = feesOwner.publicKey.toString()
-    writeData['feesOwner_secret'] = exportSecretKey(feesOwner)
+    writeData['feesOwner'] = feesOwner.toString()
     writeData['feesToken'] = feesToken.pubkey
 
     console.log('Create Swap')
 
-    if (true) {
-        const tx = new anchor.web3.Transaction()
-        tx.add(
-            anchor.web3.SystemProgram.createAccount({
-                fromPubkey: provider.wallet.publicKey,
-                newAccountPubkey: swapDataPK,
-                space: swapBytes,
-                lamports: swapRent,
-                programId: swapContractPK,
-            })
-        )
-        await provider.send(tx, [swapData])
-    }
+    const tx = new anchor.web3.Transaction()
+    tx.add(
+        anchor.web3.SystemProgram.createAccount({
+            fromPubkey: provider.wallet.publicKey,
+            newAccountPubkey: swapDataPK,
+            space: swapBytes,
+            lamports: swapRent,
+            programId: swapContractPK,
+        })
+    )
+    await provider.send(tx, [swapData])
 
     let res = await swapContract.rpc.createSwap(
         rootData.nonce,
         false, // use oracle
+        false, // oracle max
         false, // inverse oracle
         false, // oracle range check
         0, // 0 - no oracle, 1 - switchboard.xyz
         new anchor.BN(0), // range min
         new anchor.BN(0), // range max
         new anchor.BN(1), // swap rate
-        new anchor.BN(1), // base rate
+        new anchor.BN(100), // base rate
         feesInbound, // fees on inbound token
         100, // fees basis points
         false, // merchant-only
@@ -162,11 +108,9 @@ async function main() {
         }
     )
     console.log(res)
-    try {
-        await fs.writeFile('data-' + swapDataPK.toString().substring(0, 8) + '.json', JSON.stringify(writeData, null, 4))
-    } catch (error) {
-        console.log("File Error: " + error)
-    }
+    let swapName = swapDataPK.toString().substring(0, 8)
+    swapName = 'usdc-usdv'
+    await jsonFileWrite('../../data/swap-' + swapName + '.json', writeData)
 }
 
 console.log('Begin')

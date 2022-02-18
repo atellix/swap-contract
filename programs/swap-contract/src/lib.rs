@@ -542,8 +542,9 @@ pub mod swap_contract {
     }
 
     pub fn create_swap(ctx: Context<CreateSwap>,
-        inp_root_nonce: u8,             // RootData nonce
-        inp_swpd_nonce: u8,             // SwapData nonce
+        inp_swap_id: u16,               // SwapData Index ID
+        _inp_root_nonce: u8,             // RootData nonce
+        _inp_swpd_nonce: u8,             // SwapData nonce
         inp_oracle_verify: bool,        // Use oracle to verify price range (to check peg stability on stablecoins)
         inp_oracle_type: u8,            // Use oracle type
         inp_verify_min: u64,            // Minimum of price range (0 for unused)
@@ -569,23 +570,9 @@ pub mod swap_contract {
         inp_out_rate_base: u64,         // Base rate
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
-        let acc_swap = &ctx.accounts.swap_data.to_account_info(); 
-        let acc_root = &ctx.accounts.root_data.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let acc_inb = &ctx.accounts.inb_mint.to_account_info();
         let acc_out = &ctx.accounts.out_mint.to_account_info();
-        //let acc_sys = &ctx.accounts.system_program.to_account_info();
-
-        // Verify program data
-        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
-            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
-        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
-        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
-
-        // Verify swap data
-        let acc_swpd_expected = Pubkey::create_program_address(&[acc_inb.key.as_ref(), acc_out.key.as_ref(), &[inp_swpd_nonce]], ctx.program_id)
-            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
-        verify_matching_accounts(acc_swap.key, &acc_swpd_expected, Some(String::from("Invalid swap data")))?;
 
         let admin_role = has_role(&acc_auth, Role::SwapAdmin, acc_admn.key);
         if admin_role.is_err() {
@@ -638,6 +625,7 @@ pub mod swap_contract {
         let sw = &mut ctx.accounts.swap_data;
         sw.active = true;
         sw.locked = false;
+        sw.swap_id = inp_swap_id;
         sw.slot = clock.slot;
         sw.oracle_data = oracle;
         sw.oracle_type = inp_oracle_type;
@@ -659,6 +647,7 @@ pub mod swap_contract {
     }
 
     pub fn update_swap(ctx: Context<UpdateSwap>,
+        _inp_swap_id: u16,          // SwapData Index ID
         _inp_root_nonce: u8,        // RootData nonce
         _inp_swpd_nonce: u8,        // SwapData nonce
         inp_locked: bool,           // Lock / unlock
@@ -717,6 +706,7 @@ pub mod swap_contract {
     }
 
     pub fn update_swap_active(ctx: Context<UpdateSwap>,
+        _inp_swap_id: u16,          // SwapData Index ID
         inp_root_nonce: u8,         // RootData nonce
         inp_active: bool,           // Active flag
     ) -> ProgramResult {
@@ -751,6 +741,7 @@ pub mod swap_contract {
     }
 
     pub fn mint_deposit(ctx: Context<MintDeposit>,
+        _inp_swap_id: u16,          // SwapData Index ID
         _inp_root_nonce: u8,        // RootData nonce
         _inp_swpd_nonce: u8,        // Token Info nonce
         inp_tokn_nonce: u8,         // Associated token nonce
@@ -832,6 +823,7 @@ pub mod swap_contract {
     }
 
     pub fn deposit(ctx: Context<TransferDeposit>,
+        _inp_swap_id: u16,          // SwapData Index ID
         _inp_root_nonce: u8,         // RootData nonce
         _inp_swpd_nonce: u8,         // SwapData nonce
         inp_tokn_nonce: u8,         // Associated token nonce
@@ -915,7 +907,8 @@ pub mod swap_contract {
     }
 
     pub fn withdraw(ctx: Context<Withdraw>,
-        _inp_root_nonce: u8,         // RootData nonce
+        _inp_swap_id: u16,          // SwapData Index ID
+        _inp_root_nonce: u8,        // RootData nonce
         inp_swpd_nonce: u8,         // SwapData nonce
         inp_tokn_nonce: u8,         // Associated token nonce
         inp_amount: u64,            // Amount to mint
@@ -957,9 +950,11 @@ pub mod swap_contract {
         verify_matching_accounts(acc_tokn.key, &derived_key, Some(String::from("Invalid swap token vault")))?;
 
         msg!("Atellix: Attempt withdraw: {}", inp_amount.to_string());
+        let swap_bts: [u8; 2] = ctx.accounts.swap_data.swap_id.to_le_bytes();
         let swap_seeds = &[
             ctx.accounts.inb_mint.to_account_info().key.as_ref(),
             ctx.accounts.out_mint.to_account_info().key.as_ref(),
+            swap_bts.as_ref(),
             &[inp_swpd_nonce],
         ];
         let swap_signer = &[&swap_seeds[..]];
@@ -1019,10 +1014,17 @@ pub mod swap_contract {
                                     // Buy orders receive X out tokens, Sell orders send X inb tokens
         inp_tokens: u64,            // Number of tokens to send/receive (X tokens)
     ) -> ProgramResult {
+        let sw = &ctx.accounts.swap_data;
+
+        // Verify swap data
+        let acc_swpd_expected = Pubkey::create_program_address(&[
+            sw.inb_mint.as_ref(), sw.out_mint.as_ref(), sw.swap_id.to_le_bytes().as_ref(), &[inp_swpd_nonce]
+        ], ctx.program_id)
+            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        verify_matching_accounts(ctx.accounts.swap_data.to_account_info().key, &acc_swpd_expected, Some(String::from("Invalid swap data")))?;
 
         // Verify swap token info and fees token
         let acc_fee = &ctx.accounts.fees_token.to_account_info();
-        let sw = &ctx.accounts.swap_data;
         if !sw.active {
             msg!("Inactive swap");
             return Err(ErrorCode::AccessDenied.into());
@@ -1202,9 +1204,11 @@ pub mod swap_contract {
         //msg!("Atellix: New Inbound Amount: {}", inb_info.amount.to_string());
         //msg!("Atellix: New Outbound Amount: {}", out_info.amount.to_string());
 
+        let swap_bts: [u8; 2] = sw.swap_id.to_le_bytes();
         let swap_seeds = &[
             sw.inb_mint.as_ref(),
             sw.out_mint.as_ref(),
+            swap_bts.as_ref(),
             &[inp_swpd_nonce],
         ];
         let swap_signer = &[&swap_seeds[..]];
@@ -1324,15 +1328,15 @@ pub struct UpdateRBAC<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(inb_root_nonce: u8)]
+#[instruction(inb_swap_id: u16, _inb_root_nonce: u8)]
 pub struct CreateSwap<'info> {
-    #[account(seeds = [program_id.as_ref()], bump = inb_root_nonce)]
+    #[account(seeds = [program_id.as_ref()], bump = _inb_root_nonce)]
     pub root_data: Account<'info, RootData>,
     #[account(constraint = root_data.root_authority == auth_data.key())]
     pub auth_data: UncheckedAccount<'info>,
     #[account(mut)]
     pub swap_admin: Signer<'info>,
-    #[account(init, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref()], bump, payer = swap_admin)]
+    #[account(init, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref(), inb_swap_id.to_le_bytes().as_ref()], bump, payer = swap_admin)]
     pub swap_data: Account<'info, SwapData>,
     pub inb_mint: Account<'info, Mint>,
     pub out_mint: Account<'info, Mint>,
@@ -1341,13 +1345,13 @@ pub struct CreateSwap<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(_inp_root_nonce: u8, _inp_swpd_nonce: u8)]
+#[instruction(_inp_swap_id: u16, _inp_root_nonce: u8, _inp_swpd_nonce: u8)]
 pub struct UpdateSwap<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
     #[account(constraint = root_data.root_authority == auth_data.key())]
     pub auth_data: UncheckedAccount<'info>,
-    #[account(mut, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref()], bump = _inp_swpd_nonce)]
+    #[account(mut, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref(), _inp_swap_id.to_le_bytes().as_ref()], bump = _inp_swpd_nonce)]
     pub swap_data: Account<'info, SwapData>,
     pub swap_admin: Signer<'info>,
     pub inb_mint: UncheckedAccount<'info>,
@@ -1355,7 +1359,7 @@ pub struct UpdateSwap<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(_inp_root_nonce: u8, _inp_swpd_nonce: u8)]
+#[instruction(_inp_swap_id: u16, _inp_root_nonce: u8, _inp_swpd_nonce: u8)]
 pub struct MintDeposit<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
@@ -1368,7 +1372,7 @@ pub struct MintDeposit<'info> {
     pub inb_mint: UncheckedAccount<'info>,
     #[account(mut)]
     pub out_mint: UncheckedAccount<'info>,
-    #[account(mut, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref()], bump = _inp_swpd_nonce)]
+    #[account(mut, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref(), _inp_swap_id.to_le_bytes().as_ref()], bump = _inp_swpd_nonce)]
     pub swap_data: Account<'info, SwapData>,
     pub token_admin: Signer<'info>,
     #[account(address = token::ID)]
@@ -1376,7 +1380,7 @@ pub struct MintDeposit<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(_inp_root_nonce: u8, _inp_swpd_nonce: u8)]
+#[instruction(_inp_swap_id: u16, _inp_root_nonce: u8, _inp_swpd_nonce: u8)]
 pub struct TransferDeposit<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
@@ -1387,7 +1391,7 @@ pub struct TransferDeposit<'info> {
     pub swap_admin: Signer<'info>,
     pub inb_mint: UncheckedAccount<'info>,
     pub out_mint: UncheckedAccount<'info>,
-    #[account(mut, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref()], bump = _inp_swpd_nonce)]
+    #[account(mut, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref(), _inp_swap_id.to_le_bytes().as_ref()], bump = _inp_swpd_nonce)]
     pub swap_data: Account<'info, SwapData>,
     #[account(mut)]
     pub token_src: Account<'info, TokenAccount>,
@@ -1397,7 +1401,7 @@ pub struct TransferDeposit<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(_inp_root_nonce: u8, inp_swpd_nonce: u8)]
+#[instruction(_inp_swap_id: u16, _inp_root_nonce: u8, inp_swpd_nonce: u8)]
 pub struct Withdraw<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
@@ -1405,7 +1409,7 @@ pub struct Withdraw<'info> {
     pub auth_data: UncheckedAccount<'info>,
     #[account(mut)]
     pub swap_token: Account<'info, TokenAccount>,
-    #[account(mut, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref()], bump = inp_swpd_nonce)]
+    #[account(mut, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref(), _inp_swap_id.to_le_bytes().as_ref()], bump = inp_swpd_nonce)]
     pub swap_data: Account<'info, SwapData>,
     pub swap_admin: Signer<'info>,
     pub inb_mint: UncheckedAccount<'info>,
@@ -1457,6 +1461,7 @@ pub struct SwapData {
     pub active: bool,                   // Active flag
     pub locked: bool,                   // Locked flag (prevents updates)
     pub slot: u64,                      // Last slot updated
+    pub swap_id: u16,                   // Swap ID
     pub oracle_data: Pubkey,            // Oracle data address or Pubkey::default() for none
     pub oracle_type: u8,                // Oracle data type
     pub oracle_verify: bool,            // Uses oracle data to check for a valid range

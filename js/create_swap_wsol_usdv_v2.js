@@ -27,6 +27,7 @@ async function main() {
     var authData
     var authDataPK
     var swapAdmin1
+    var swapId = 0
 
     const swapCache = await jsonFileRead('../../data/swap.json')
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
@@ -43,7 +44,9 @@ async function main() {
     writeData['inbMint'] = collateralMint.toString()
     writeData['outMint'] = issuingMint.toString()
     
-    const swapData = await programAddress([collateralMint.toBuffer(), issuingMint.toBuffer()], swapContractPK)
+    var buf = Buffer.alloc(2)
+    buf.writeInt16LE(swapId)
+    const swapData = await programAddress([collateralMint.toBuffer(), issuingMint.toBuffer(), buf], swapContractPK)
 
     var feesInbound = true
     var feesToken
@@ -62,6 +65,7 @@ async function main() {
 
     console.log('Create Swap')
     let res = await swapContract.rpc.createSwap(
+        swapId,                     // swap id
         rootData.nonce,             // root bump seed
         swapData.nonce,             // swap bump seed
         false,                      // oracle verify
