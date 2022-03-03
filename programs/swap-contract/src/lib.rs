@@ -18,7 +18,7 @@ use net_authority::{ cpi::accounts::RecordRevenue, MerchantApproval };
 extern crate slab_alloc;
 use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, SlabVec, SlabTreeError };
 
-declare_id!("325UwbyUcMUYXEkNMEzKSuTB8CanJ8sNDgt2Xmnjb7xe");
+declare_id!("SWAP6nG9vPpJqVCUsQeKA9ttyyQwKqFuVkJdrPYvQLH");
 
 pub const VERSION_MAJOR: u32 = 1;
 pub const VERSION_MINOR: u32 = 0;

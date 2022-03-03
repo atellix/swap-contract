@@ -77,7 +77,10 @@ async function main() {
     tokenMint1 = new PublicKey(swapSpec.inbMint) // WSOL
     tokenMint2 = new PublicKey(swapSpec.outMint) // USDV
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
-    swapData = await programAddress([tokenMint1.toBuffer(), tokenMint2.toBuffer()], swapContractPK)
+    var swapId = 0
+    var buf = Buffer.alloc(2)
+    buf.writeInt16LE(swapId)
+    swapData = await programAddress([tokenMint1.toBuffer(), tokenMint2.toBuffer(), buf], swapContractPK)
     swapDataPK = new PublicKey(swapData.pubkey)
     feesTK = new PublicKey(swapSpec.feesToken)
 

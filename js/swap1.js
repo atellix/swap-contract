@@ -99,14 +99,14 @@ async function main() {
 
     var djs
     try {
-        djs = await fs.readFile('../../data/swap-usdv-usdc.json')
+        djs = await fs.readFile('../../data/swap-usdc-usdv.json')
     } catch (error) {
         console.error('File Error: ', error)
     }
     const swapSpec = JSON.parse(djs.toString())
 
-    tokenMint1 = new PublicKey(swapSpec.tokenMint1)
-    tokenMint2 = new PublicKey(swapSpec.tokenMint2)
+    tokenMint1 = new PublicKey(swapSpec.inbMint)
+    tokenMint2 = new PublicKey(swapSpec.outMint)
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
     swapDataPK = new PublicKey(swapSpec.swapData)
     feesTK = new PublicKey(swapSpec.feesToken)

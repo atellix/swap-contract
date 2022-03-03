@@ -63,6 +63,17 @@ async function main() {
     console.log('SwapAdmin:')
     console.log(swapAdmin1.publicKey.toString())
 
+    console.log('Fund Swap Admin')
+    const tx = new anchor.web3.Transaction()
+    tx.add(
+        anchor.web3.SystemProgram.transfer({
+            fromPubkey: provider.wallet.publicKey,
+            toPubkey: swapAdmin1.publicKey,
+            lamports: await provider.connection.getMinimumBalanceForRentExemption(swapContract.account.swapData.size),
+        })
+    )
+    await provider.send(tx)
+
     console.log('Create Swap')
     let res = await swapContract.rpc.createSwap(
         swapId,                     // swap id
