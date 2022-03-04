@@ -559,6 +559,7 @@ pub mod swap_contract {
         inp_inb_fees_bps: u32,          // Swap fees in basis points
         inp_inb_rate_swap: u64,         // Swap rate
         inp_inb_rate_base: u64,         // Base rate
+        inp_inb_merchant: bool,         // Enable merchant swaps
         // Outbound tokens
         inp_out_decimals: u8,           // Decimals
         inp_out_basis_rates: bool,      // Uses cost-basis rates
@@ -568,6 +569,7 @@ pub mod swap_contract {
         inp_out_fees_bps: u32,          // Swap fees in basis points
         inp_out_rate_swap: u64,         // Swap rate
         inp_out_rate_base: u64,         // Base rate
+        inp_out_merchant: bool,         // Enable merchant swaps
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
@@ -607,6 +609,7 @@ pub mod swap_contract {
             fees_bps: inp_inb_fees_bps,
             fees_total: 0,
             amount: 0,
+            merchant: inp_inb_merchant,
         };
         let out_token = TokenData {
             basis_rates: inp_out_basis_rates,
@@ -619,6 +622,7 @@ pub mod swap_contract {
             fees_bps: inp_out_fees_bps,
             fees_total: 0,
             amount: 0,
+            merchant: inp_out_merchant,
         };
 
         let clock = Clock::get()?;
@@ -663,6 +667,7 @@ pub mod swap_contract {
         inp_swap_rate: u64,         // Swap rate
         inp_base_rate: u64,         // Base rate
         inp_fees_bps: u32,          // Fees basis points
+        inp_merchant: bool,         // Enable merchant swap
         inp_event_uuid: u128,       // Event UUID
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // SwapUpdate role
@@ -706,6 +711,7 @@ pub mod swap_contract {
         current_side.rate_swap = inp_swap_rate;
         current_side.rate_base = inp_base_rate;
         current_side.fees_bps = inp_fees_bps;
+        current_side.merchant = inp_merchant;
 
         msg!("atellix-log");
         emit!(TransferEvent {
@@ -1138,6 +1144,10 @@ pub mod swap_contract {
         let mut merchant_offset: usize = 0;
         let mut merchant_tx_id: u64 = 0;
         if inp_merchant {
+            if !current_data.merchant {
+                msg!("Not enabled for merchant swap");
+                return Err(ErrorCode::AccessDenied.into());
+            }
             msg!("Merchant Swap");
             if current_data.oracle_rates || sw.oracle_verify {
                 merchant_offset = 1;
@@ -1332,6 +1342,7 @@ pub mod swap_contract {
             oracle_val: oracle_log_val,
             swap_tx: sw.swap_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?,
             merchant_tx_id: merchant_tx_id,
+            merchant_swap: inp_merchant,
         });
 
         update_swap_result(ctx, inp_swap_direction, tokens_inb, tokens_out, tokens_fee, clock.slot)?;
@@ -1507,6 +1518,7 @@ pub struct TokenData {
     pub rate_base: u64,                 // Base rate
     pub amount: u64,                    // Number of tokens in vault for this swap
     pub decimals: u8,                   // Mint decimal places
+    pub merchant: bool,                 // Enable merchant-only, no-fee swaps
 }
 unsafe impl Pod for TokenData {}
 unsafe impl Zeroable for TokenData {}
@@ -1578,6 +1590,7 @@ pub struct SwapEvent {
     pub oracle_val: u128,
     pub swap_tx: u64,
     pub merchant_tx_id: u64,
+    pub merchant_swap: bool,
 }
 
 #[event]

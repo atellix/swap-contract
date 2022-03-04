@@ -93,6 +93,7 @@ async function main() {
         0,                          // fees bps
         new anchor.BN(100),         // swap rate
         new anchor.BN(1),           // base rate
+        false,                      // merchant-enabled swap
         // Outbound "Issuing" tokens (burning... swap_direction = 0: Issuing -> Collateral)
         4,                          // decimals
         false,                      // basis swap rates
@@ -102,6 +103,7 @@ async function main() {
         100,                        // fees bps
         new anchor.BN(1),           // swap rate
         new anchor.BN(100),         // base rate
+        true,                       // merchant-enabled swap
         {
             accounts: {
                 rootData: new PublicKey(rootData.pubkey),
