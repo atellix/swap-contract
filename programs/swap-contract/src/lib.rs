@@ -18,7 +18,7 @@ use net_authority::{ cpi::accounts::RecordRevenue, MerchantApproval };
 extern crate slab_alloc;
 use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, SlabVec, SlabTreeError };
 
-declare_id!("SWAP6nG9vPpJqVCUsQeKA9ttyyQwKqFuVkJdrPYvQLH");
+declare_id!("SWAPVtwqs7Pcq4qFTvpCdAo8J88Zy77ak5rChCT8ytb");
 
 pub const VERSION_MAJOR: u32 = 1;
 pub const VERSION_MINOR: u32 = 0;
@@ -51,6 +51,7 @@ pub enum Role {             // Role-based access control:
     SwapUpdate,             // 5 - Can update swap parameters
     SwapAbort,              // 6 - Can deactivate swaps
     SwapPermit,             // 7 - Can receive withdrawn tokens
+    SwapOffset,             // 8 - Can append offset entries
 }
 
 #[derive(Copy, Clone)]
@@ -363,8 +364,7 @@ fn calculate_fee(
     Ok(0)
 }
 
-pub fn update_swap_result(ctx: Context<Swap>, swap_direction: bool, tokens_inb: u64, tokens_out: u64, tokens_fee: u64, slot: u64) -> ProgramResult {
-    let swp = &mut ctx.accounts.swap_data;
+pub fn update_swap_result(swp: &mut SwapData, swap_direction: bool, tokens_inb: u64, tokens_out: u64, tokens_fee: u64, slot: u64) -> ProgramResult {
     if swap_direction {
         swp.inb_token_data.amount = swp.inb_token_data.amount.checked_add(tokens_inb).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         swp.out_token_data.amount = swp.out_token_data.amount.checked_sub(tokens_out).ok_or(ProgramError::from(ErrorCode::Overflow))?;
@@ -726,8 +726,6 @@ pub mod swap_contract {
             asset_acct: Pubkey::default(),
             amount: 0,
             new_total: 0,
-            adjust_tokens_offset: 0,
-            adjust_cost_offset: 0,
             active: sw.active,
         });
 
@@ -776,8 +774,6 @@ pub mod swap_contract {
             asset_acct: Pubkey::default(),
             amount: 0,
             new_total: 0,
-            adjust_tokens_offset: 0,
-            adjust_cost_offset: 0,
             active: sw.active,
         });
 
@@ -864,8 +860,6 @@ pub mod swap_contract {
             asset_acct: Pubkey::default(),
             amount: inp_amount,
             new_total: new_total,
-            adjust_tokens_offset: 0,
-            adjust_cost_offset: 0,
             active: sw.active,
         });
 
@@ -954,8 +948,6 @@ pub mod swap_contract {
             asset_acct: Pubkey::default(),
             amount: inp_amount,
             new_total: new_total,
-            adjust_tokens_offset: 0,
-            adjust_cost_offset: 0,
             active: sw.active,
         });
 
@@ -1057,8 +1049,6 @@ pub mod swap_contract {
             asset_acct: Pubkey::default(),
             amount: inp_amount,
             new_total: new_total,
-            adjust_tokens_offset: 0,
-            adjust_cost_offset: 0,
             active: sw.active,
         });
 
@@ -1324,6 +1314,9 @@ pub mod swap_contract {
         }
 
         let clock = Clock::get()?;
+        update_swap_result(&mut ctx.accounts.swap_data, inp_swap_direction, tokens_inb, tokens_out, tokens_fee, clock.slot)?;
+
+        let swr = &ctx.accounts.swap_data;
         msg!("atellix-log");
         emit!(SwapEvent {
             event_hash: 144834217477609949185867766428666600068, // "solana/program/atx-swap-contract/swap" (MurmurHash3 128-bit unsigned)
@@ -1335,17 +1328,17 @@ pub mod swap_contract {
             inb_token_src: ctx.accounts.inb_token_src.key(),
             out_tokens: tokens_out,
             out_token_dst: ctx.accounts.out_token_dst.key(),
-            fees_inbound: sw.fees_inbound,
+            fees_inbound: swr.fees_inbound,
             fees_amount: tokens_fee,
-            fees_token: sw.fees_token,
+            fees_token: swr.fees_token,
             use_oracle: oracle_log_inuse,
             oracle_val: oracle_log_val,
-            swap_tx: sw.swap_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?,
+            swap_tx: swr.swap_tx_count,
             merchant_tx_id: merchant_tx_id,
             merchant_swap: inp_merchant,
+            tokens_outstanding: swr.tokens_outstanding,
+            cost_basis: swr.cost_basis,
         });
-
-        update_swap_result(ctx, inp_swap_direction, tokens_inb, tokens_out, tokens_fee, clock.slot)?;
 
         Ok(())
     }
@@ -1591,6 +1584,8 @@ pub struct SwapEvent {
     pub swap_tx: u64,
     pub merchant_tx_id: u64,
     pub merchant_swap: bool,
+    pub tokens_outstanding: i128,
+    pub cost_basis: i128,
 }
 
 #[event]
@@ -1606,10 +1601,31 @@ pub struct TransferEvent {
     pub asset_acct: Pubkey, // The collateral asset management account
     pub amount: u64,
     pub new_total: u64,
-    pub adjust_tokens_offset: i128,
-    pub adjust_cost_offset: i128,
     pub active: bool,
 }
+
+/*#[event]
+pub struct OffsetEvent {
+    pub event_hash: u128,
+    pub event_uuid: u128,
+    pub slot: u64,
+    pub user: Pubkey,
+    pub swap_data: Pubkey,
+    pub offset_account: Pubkey,
+    pub offset_tx_id: u64,
+    pub adjust_tokens_offset: i128,
+    pub adjust_cost_offset: i128,
+}*/
+
+/*#[account]
+#[derive(Default)]
+pub struct OffsetAccount {
+    pub account_uuid: u128,
+    pub offset_tx: u64,
+    pub swap_data: Pubkey,
+    pub account_url: String,   // Max len 128
+}*/
+// 8 + 16 + 8 + 32 + 128 = 192 bytes
 
 #[account]
 #[derive(Default)]

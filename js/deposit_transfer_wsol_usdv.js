@@ -41,7 +41,7 @@ async function main() {
     const tokData = await associatedTokenAddress(new PublicKey(tkiData.pubkey), outMint)
     const srcToken = await associatedTokenAddress(treasury1.publicKey, outMint)
 
-    console.log('Token Info: ' + tkiData.pubkey)
+    console.log('SwapData: ' + tkiData.pubkey)
     console.log('Deposit: ' + tokData.pubkey)
     let res = await swapContract.rpc.deposit(
         swapId,
