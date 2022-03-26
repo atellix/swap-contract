@@ -90,7 +90,7 @@ async function main() {
         true,                       // oracle swap rates
         false,                      // oracle max
         false,                      // oracle inverse
-        0,                          // fees bps
+        25,                         // fees bps
         new anchor.BN(10 ** 4),     // swap rate
         new anchor.BN(10 ** 9),     // base rate
         false,                      // merchant-enabled swap
