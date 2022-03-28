@@ -703,6 +703,12 @@ pub mod swap_contract {
         sw.oracle_verify = inp_oracle_verify;
         sw.oracle_verify_min = inp_verify_min;
         sw.oracle_verify_max = inp_verify_max;
+
+        if ctx.remaining_accounts.len() > 0 {
+            let acc_orac = ctx.remaining_accounts.get(0).unwrap();
+            sw.oracle_data = *acc_orac.key;
+        }
+
         let current_side = if inp_swap_direction { &mut sw.inb_token_data } else { &mut sw.out_token_data };
         current_side.basis_rates = inp_basis_rates;
         current_side.oracle_rates = inp_oracle_rates;
