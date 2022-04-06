@@ -1140,6 +1140,11 @@ pub mod swap_contract {
         let mut merchant_offset: usize = 0;
         let mut merchant_tx_id: u64 = 0;
         if inp_merchant {
+            // Remaining accounts: (+ merchant_offset of 1 if oracle in use)
+            // 0 - Swap Root
+            // 1 - Swap Auth
+            // 2 - Net Authority Program
+            // 3 - Merchant Approval
             if !current_data.merchant {
                 msg!("Not enabled for merchant swap");
                 return Err(ErrorCode::AccessDenied.into());
@@ -1148,8 +1153,18 @@ pub mod swap_contract {
             if current_data.oracle_rates || sw.oracle_verify {
                 merchant_offset = 1;
             }
-            let acc_auth = ctx.remaining_accounts.get(merchant_offset).unwrap();
-            let acc_mrch_approval = ctx.remaining_accounts.get(merchant_offset + 2).unwrap();
+            let (root_account, _bump_root) = Pubkey::find_program_address(
+                &[ctx.program_id.as_ref()],
+                ctx.program_id,
+            );
+
+            let acc_root = ctx.remaining_accounts.get(merchant_offset).unwrap();
+            verify_matching_accounts(acc_root.key, &root_account, Some(String::from("Invalid root data")))?;
+            let mut root_data: &[u8] = &acc_root.try_borrow_data()?;
+            let root = RootData::try_deserialize(&mut root_data)?;
+            let acc_auth = ctx.remaining_accounts.get(merchant_offset + 1).unwrap();
+            verify_matching_accounts(acc_auth.key, &root.root_authority, Some(String::from("Invalid auth data")))?;
+            let acc_mrch_approval = ctx.remaining_accounts.get(merchant_offset + 3).unwrap();
             let netauth_role = has_role(&acc_auth, Role::NetworkAuth, acc_mrch_approval.owner);
             if netauth_role.is_err() {
                 msg!("Invalid network authority");
@@ -1245,10 +1260,10 @@ pub mod swap_contract {
             // Record merchant revenue
             let root_seeds = &[ctx.program_id.as_ref(), &[inp_root_nonce]];
             let root_signer = &[&root_seeds[..]];
-            let na_program = ctx.remaining_accounts.get(merchant_offset).unwrap(); // NetAuthority Program
+            let na_program = ctx.remaining_accounts.get(merchant_offset + 2).unwrap(); // NetAuthority Program
             let na_accounts = RecordRevenue {
-                revenue_admin: ctx.remaining_accounts.get(merchant_offset + 1).unwrap().clone(), // NetAuthority Root Data
-                merchant_approval: ctx.remaining_accounts.get(merchant_offset + 2).unwrap().clone(),
+                revenue_admin: ctx.remaining_accounts.get(merchant_offset + 1).unwrap().clone(), // Swap Root Account
+                merchant_approval: ctx.remaining_accounts.get(merchant_offset + 3).unwrap().clone(),
             };
             let na_ctx = CpiContext::new_with_signer(na_program.clone(), na_accounts, root_signer);
  
@@ -1256,7 +1271,7 @@ pub mod swap_contract {
             net_authority::cpi::record_revenue(na_ctx, false, tokens_inb)?;
 
             // Reload data after CPI call
-            let acc_mrch_approval = ctx.remaining_accounts.get(merchant_offset + 2).unwrap();
+            let acc_mrch_approval = ctx.remaining_accounts.get(merchant_offset + 3).unwrap();
             let mut aprv_data: &[u8] = &acc_mrch_approval.try_borrow_data()?;
             let mrch_approval = MerchantApproval::try_deserialize(&mut aprv_data)?;
             merchant_tx_id = mrch_approval.tx_count;
