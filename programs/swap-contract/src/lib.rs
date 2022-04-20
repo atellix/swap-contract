@@ -6,7 +6,7 @@ use num_enum::{ TryFromPrimitive, IntoPrimitive };
 use switchboard_program;
 use switchboard_program::{ FastRoundResultAccountData };
 use anchor_lang::prelude::*;
-use anchor_spl::token::{ self, Token, Mint, TokenAccount, MintTo, Transfer };
+use anchor_spl::token::{ self, Token, TokenAccount, MintTo, Transfer };
 use anchor_spl::associated_token::{ AssociatedToken };
 use solana_program::{
     account_info::AccountInfo,
@@ -22,7 +22,7 @@ declare_id!("SWAPVtwqs7Pcq4qFTvpCdAo8J88Zy77ak5rChCT8ytb");
 
 pub const VERSION_MAJOR: u32 = 1;
 pub const VERSION_MINOR: u32 = 0;
-pub const VERSION_PATCH: u32 = 0;
+pub const VERSION_PATCH: u32 = 1;
 
 pub const MAX_RBAC: u32 = 128;
 
@@ -82,17 +82,17 @@ impl UserRBAC {
         if free_top == 0 { // Empty free list
             return Ok(svec.next_index());
         }
-        let free_index = free_top.checked_sub(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        let free_index = free_top.checked_sub(1).ok_or(error!(ErrorCode::Overflow))?;
         let index_act = pt.index::<UserRBAC>(index_datatype(data_type), free_index as usize);
         let index_ptr = index_act.free();
         pt.header_mut::<SlabVec>(index_datatype(data_type)).set_free_top(index_ptr);
         Ok(free_index)
     }
 
-    fn free_index(pt: &mut SlabPageAlloc, data_type: DT, idx: u32) -> ProgramResult {
+    fn free_index(pt: &mut SlabPageAlloc, data_type: DT, idx: u32) -> anchor_lang::Result<()> {
         let free_top = pt.header::<SlabVec>(index_datatype(data_type)).free_top();
         pt.index_mut::<UserRBAC>(index_datatype(data_type), idx as usize).set_free(free_top);
-        let new_top = idx.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        let new_top = idx.checked_add(1).ok_or(error!(ErrorCode::Overflow))?;
         pt.header_mut::<SlabVec>(index_datatype(data_type)).set_free_top(new_top);
         Ok(())
     }
@@ -152,7 +152,7 @@ fn map_remove(pt: &mut SlabPageAlloc, data_type: DT, key: u128) -> FnResult<(), 
     Ok(())
 }
 
-fn has_role(acc_auth: &AccountInfo, role: Role, key: &Pubkey) -> ProgramResult {
+fn has_role(acc_auth: &AccountInfo, role: Role, key: &Pubkey) -> anchor_lang::Result<()> {
     let auth_data: &mut [u8] = &mut acc_auth.try_borrow_mut_data()?;
     let rd = SlabPageAlloc::new(auth_data);
     let authhash: u128 = CritMap::bytes_hash([[role as u32].as_byte_slice(), key.as_ref()].concat().as_slice());
@@ -172,7 +172,7 @@ fn has_role(acc_auth: &AccountInfo, role: Role, key: &Pubkey) -> ProgramResult {
     Ok(())
 }
 
-fn verify_matching_accounts(left: &Pubkey, right: &Pubkey, error_msg: Option<String>) -> ProgramResult {
+fn verify_matching_accounts(left: &Pubkey, right: &Pubkey, error_msg: Option<String>) -> anchor_lang::Result<()> {
     if *left != *right {
         if error_msg.is_some() {
             msg!(error_msg.unwrap().as_str());
@@ -184,18 +184,18 @@ fn verify_matching_accounts(left: &Pubkey, right: &Pubkey, error_msg: Option<Str
     Ok(())
 }
 
-fn calculate_rates(td: &TokenData, sw: &SwapData, swap_rate: &mut u128, base_rate: &mut u128, extra_decimals: &mut u128, oracle_log_val: u128) -> ProgramResult {
+fn calculate_rates(td: &TokenData, sw: &SwapData, swap_rate: &mut u128, base_rate: &mut u128, extra_decimals: &mut u128, oracle_log_val: u128) -> anchor_lang::Result<()> {
     let adjust_u: u32 = 8; // Calculate to 8 decimal places
     let base_u: u128 = 10;
     if td.basis_rates {
         //msg!("Atellix: Use basis rates");
-        let mut tokens_outstanding: i128 = sw.tokens_outstanding.checked_add(sw.tokens_offset).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        let tokens_cost: i128 = sw.cost_basis.checked_add(sw.cost_offset).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        let mut tokens_outstanding: i128 = sw.tokens_outstanding.checked_add(sw.tokens_offset).ok_or(error!(ErrorCode::Overflow))?;
+        let tokens_cost: i128 = sw.cost_basis.checked_add(sw.cost_offset).ok_or(error!(ErrorCode::Overflow))?;
         // Calculate basis price and multiply time 10^8 to compare to oracle prices
         let base_i: i128 = 10;
         let cost_decimals: i128 = base_i.pow(adjust_u);
-        tokens_outstanding = tokens_outstanding.checked_mul(cost_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        tokens_outstanding = tokens_outstanding.checked_div(tokens_cost).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        tokens_outstanding = tokens_outstanding.checked_mul(cost_decimals).ok_or(error!(ErrorCode::Overflow))?;
+        tokens_outstanding = tokens_outstanding.checked_div(tokens_cost).ok_or(error!(ErrorCode::Overflow))?;
         let basis_price: u128 = u128::try_from(tokens_outstanding).map_err(|_| ErrorCode::Overflow)?;
         if basis_price == 0 {
             return Err(ErrorCode::Overflow.into());
@@ -205,10 +205,10 @@ fn calculate_rates(td: &TokenData, sw: &SwapData, swap_rate: &mut u128, base_rat
             //msg!("Atellix: Extra decimals: {}", extra_decimals.to_string());
             let in_decimals: i32 = sw.inb_token_data.decimals as i32;
             let out_decimals: i32 = sw.out_token_data.decimals as i32;
-            let mut abs_decimals: i32 = in_decimals.checked_sub(out_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            let mut abs_decimals: i32 = in_decimals.checked_sub(out_decimals).ok_or(error!(ErrorCode::Overflow))?;
             abs_decimals = abs_decimals.abs();
             let abs_decimals_u: u32 = u32::try_from(abs_decimals).map_err(|_| ErrorCode::Overflow)?;
-            let adjust_decimals: u128 = base_u.checked_pow(abs_decimals_u).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            let adjust_decimals: u128 = base_u.checked_pow(abs_decimals_u).ok_or(error!(ErrorCode::Overflow))?;
             if td.oracle_inverse {
                 *swap_rate = basis_price;
                 if td.oracle_max && oracle_log_val > *swap_rate {
@@ -232,10 +232,10 @@ fn calculate_rates(td: &TokenData, sw: &SwapData, swap_rate: &mut u128, base_rat
         //msg!("Atellix: Extra decimals: {}", extra_decimals.to_string());
         let in_decimals: i32 = sw.inb_token_data.decimals as i32;
         let out_decimals: i32 = sw.out_token_data.decimals as i32;
-        let mut abs_decimals: i32 = in_decimals.checked_sub(out_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        let mut abs_decimals: i32 = in_decimals.checked_sub(out_decimals).ok_or(error!(ErrorCode::Overflow))?;
         abs_decimals = abs_decimals.abs();
         let abs_decimals_u: u32 = u32::try_from(abs_decimals).map_err(|_| ErrorCode::Overflow)?;
-        let adjust_decimals: u128 = base_u.checked_pow(abs_decimals_u).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        let adjust_decimals: u128 = base_u.checked_pow(abs_decimals_u).ok_or(error!(ErrorCode::Overflow))?;
         if td.oracle_inverse {
             //msg!("Atellix: Inverse oracle");
             if (td.oracle_max && oracle_log_val > *swap_rate) || ! td.oracle_max {
@@ -264,12 +264,12 @@ fn calculate_swap(
     let nmr_1: u128;
     let fees_bps: u32 = if merchant { 0 } else { td.fees_bps };
     if fees_bps > 0 {
-        let mut fee_part: u128 = input_val.checked_mul(fees_bps as u128).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        fee_part = fee_part.checked_div(10000).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        let mut fee_part: u128 = input_val.checked_mul(fees_bps as u128).ok_or(error!(ErrorCode::Overflow))?;
+        fee_part = fee_part.checked_div(10000).ok_or(error!(ErrorCode::Overflow))?;
         if is_buy {
-            nmr_1 = input_val.checked_add(fee_part).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            nmr_1 = input_val.checked_add(fee_part).ok_or(error!(ErrorCode::Overflow))?;
         } else {
-            nmr_1 = input_val.checked_sub(fee_part).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            nmr_1 = input_val.checked_sub(fee_part).ok_or(error!(ErrorCode::Overflow))?;
         }
     } else {
         nmr_1 = input_val;
@@ -283,23 +283,23 @@ fn calculate_swap(
         nmr_2 = base_rate;
         dnm_1 = swap_rate;
     }
-    let mut nmr_3: u128 = nmr_1.checked_mul(nmr_2).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+    let mut nmr_3: u128 = nmr_1.checked_mul(nmr_2).ok_or(error!(ErrorCode::Overflow))?;
     if td.oracle_rates { 
         if td.oracle_inverse {
             if is_buy {
-                dnm_1 = dnm_1.checked_mul(extra_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                dnm_1 = dnm_1.checked_mul(extra_decimals).ok_or(error!(ErrorCode::Overflow))?;
             } else {
-                nmr_3 = nmr_3.checked_mul(extra_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                nmr_3 = nmr_3.checked_mul(extra_decimals).ok_or(error!(ErrorCode::Overflow))?;
             }
         } else {
             if is_buy {
-                nmr_3 = nmr_3.checked_mul(extra_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                nmr_3 = nmr_3.checked_mul(extra_decimals).ok_or(error!(ErrorCode::Overflow))?;
             } else {
-                dnm_1 = dnm_1.checked_mul(extra_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                dnm_1 = dnm_1.checked_mul(extra_decimals).ok_or(error!(ErrorCode::Overflow))?;
             }
         }
     }
-    let result: u128 = nmr_3.checked_div(dnm_1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+    let result: u128 = nmr_3.checked_div(dnm_1).ok_or(error!(ErrorCode::Overflow))?;
     Ok(result)
 }
 
@@ -317,8 +317,8 @@ fn calculate_fee(
     let mut btm_pow: bool = false;
     let fees_bps: u32 = if merchant { 0 } else { td.fees_bps };
     if fees_bps > 0 {
-        let mut fee_1 = input_val.checked_mul(fees_bps as u128).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        fee_1 = fee_1.checked_div(10000).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        let mut fee_1 = input_val.checked_mul(fees_bps as u128).ok_or(error!(ErrorCode::Overflow))?;
+        fee_1 = fee_1.checked_div(10000).ok_or(error!(ErrorCode::Overflow))?;
         if inbound_fees { // Fees on inbound token
             if td.oracle_rates && is_buy {
                 if td.oracle_inverse {
@@ -328,15 +328,15 @@ fn calculate_fee(
                 }
             }
             if is_buy {
-                fee_1 = fee_1.checked_mul(swap_rate).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                fee_1 = fee_1.checked_mul(swap_rate).ok_or(error!(ErrorCode::Overflow))?;
                 if top_pow {
-                    fee_1 = fee_1.checked_mul(extra_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                    fee_1 = fee_1.checked_mul(extra_decimals).ok_or(error!(ErrorCode::Overflow))?;
                 }
                 let mut fee_2: u128 = base_rate;
                 if btm_pow {
-                    fee_2 = fee_2.checked_mul(extra_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                    fee_2 = fee_2.checked_mul(extra_decimals).ok_or(error!(ErrorCode::Overflow))?;
                 }
-                fee_1 = fee_1.checked_div(fee_2).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                fee_1 = fee_1.checked_div(fee_2).ok_or(error!(ErrorCode::Overflow))?;
             }
         } else { // Fees on outbound token
             if td.oracle_rates && ! is_buy {
@@ -347,49 +347,49 @@ fn calculate_fee(
                 }
             }
             if ! is_buy {
-                fee_1 = fee_1.checked_mul(base_rate).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                fee_1 = fee_1.checked_mul(base_rate).ok_or(error!(ErrorCode::Overflow))?;
                 if top_pow {
-                    fee_1 = fee_1.checked_mul(extra_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                    fee_1 = fee_1.checked_mul(extra_decimals).ok_or(error!(ErrorCode::Overflow))?;
                 }
                 let mut fee_2: u128 = swap_rate;
                 if btm_pow {
-                    fee_2 = fee_2.checked_mul(extra_decimals).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                    fee_2 = fee_2.checked_mul(extra_decimals).ok_or(error!(ErrorCode::Overflow))?;
                 }
-                fee_1 = fee_1.checked_div(fee_2).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+                fee_1 = fee_1.checked_div(fee_2).ok_or(error!(ErrorCode::Overflow))?;
             }
         }
-        let fee: u64 = u64::try_from(fee_1).map_err(|_| ErrorCode::Overflow)?;
+        let fee: u64 = u64::try_from(fee_1).map_err(|_| error!(ErrorCode::Overflow))?;
         return Ok(fee)
     }
     Ok(0)
 }
 
-pub fn update_swap_result(swp: &mut SwapData, swap_direction: bool, tokens_inb: u64, tokens_out: u64, tokens_fee: u64, slot: u64) -> ProgramResult {
+pub fn update_swap_result(swp: &mut SwapData, swap_direction: bool, tokens_inb: u64, tokens_out: u64, tokens_fee: u64, slot: u64) -> anchor_lang::Result<()> {
     if swap_direction {
-        swp.inb_token_data.amount = swp.inb_token_data.amount.checked_add(tokens_inb).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        swp.out_token_data.amount = swp.out_token_data.amount.checked_sub(tokens_out).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        swp.cost_basis = swp.cost_basis.checked_add(tokens_inb as i128).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        swp.tokens_outstanding = swp.tokens_outstanding.checked_add(tokens_out as i128).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        swp.inb_token_data.amount = swp.inb_token_data.amount.checked_add(tokens_inb).ok_or(error!(ErrorCode::Overflow))?;
+        swp.out_token_data.amount = swp.out_token_data.amount.checked_sub(tokens_out).ok_or(error!(ErrorCode::Overflow))?;
+        swp.cost_basis = swp.cost_basis.checked_add(tokens_inb as i128).ok_or(error!(ErrorCode::Overflow))?;
+        swp.tokens_outstanding = swp.tokens_outstanding.checked_add(tokens_out as i128).ok_or(error!(ErrorCode::Overflow))?;
         if !swp.fees_inbound {
-            swp.tokens_outstanding = swp.tokens_outstanding.checked_add(tokens_fee as i128).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            swp.tokens_outstanding = swp.tokens_outstanding.checked_add(tokens_fee as i128).ok_or(error!(ErrorCode::Overflow))?;
         }
     } else {
-        swp.inb_token_data.amount = swp.inb_token_data.amount.checked_sub(tokens_out).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        swp.out_token_data.amount = swp.out_token_data.amount.checked_add(tokens_inb).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        swp.cost_basis = swp.cost_basis.checked_sub(tokens_out as i128).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        swp.tokens_outstanding = swp.tokens_outstanding.checked_sub(tokens_inb as i128).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        swp.inb_token_data.amount = swp.inb_token_data.amount.checked_sub(tokens_out).ok_or(error!(ErrorCode::Overflow))?;
+        swp.out_token_data.amount = swp.out_token_data.amount.checked_add(tokens_inb).ok_or(error!(ErrorCode::Overflow))?;
+        swp.cost_basis = swp.cost_basis.checked_sub(tokens_out as i128).ok_or(error!(ErrorCode::Overflow))?;
+        swp.tokens_outstanding = swp.tokens_outstanding.checked_sub(tokens_inb as i128).ok_or(error!(ErrorCode::Overflow))?;
         if swp.fees_inbound {
-            swp.cost_basis = swp.cost_basis.checked_sub(tokens_fee as i128).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            swp.cost_basis = swp.cost_basis.checked_sub(tokens_fee as i128).ok_or(error!(ErrorCode::Overflow))?;
         }
     }
     if swp.fees_inbound {
-        swp.inb_token_data.amount = swp.inb_token_data.amount.checked_sub(tokens_fee).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        swp.inb_token_data.fees_total = swp.inb_token_data.fees_total.checked_add(tokens_fee).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        swp.inb_token_data.amount = swp.inb_token_data.amount.checked_sub(tokens_fee).ok_or(error!(ErrorCode::Overflow))?;
+        swp.inb_token_data.fees_total = swp.inb_token_data.fees_total.checked_add(tokens_fee).ok_or(error!(ErrorCode::Overflow))?;
     } else {
-        swp.out_token_data.amount = swp.out_token_data.amount.checked_sub(tokens_fee).ok_or(ProgramError::from(ErrorCode::Overflow))?;
-        swp.out_token_data.fees_total = swp.out_token_data.fees_total.checked_add(tokens_fee).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        swp.out_token_data.amount = swp.out_token_data.amount.checked_sub(tokens_fee).ok_or(error!(ErrorCode::Overflow))?;
+        swp.out_token_data.fees_total = swp.out_token_data.fees_total.checked_add(tokens_fee).ok_or(error!(ErrorCode::Overflow))?;
     }
-    swp.swap_tx_count = swp.swap_tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+    swp.swap_tx_count = swp.swap_tx_count.checked_add(1).ok_or(error!(ErrorCode::Overflow))?;
     swp.slot = slot;
     Ok(())
 }
@@ -397,7 +397,7 @@ pub fn update_swap_result(swp: &mut SwapData, swap_direction: bool, tokens_inb: 
 #[program]
 pub mod swap_contract {
     use super::*;
-    pub fn initialize(ctx: Context<Initialize>) -> ProgramResult {
+    pub fn initialize(ctx: Context<Initialize>) -> anchor_lang::Result<()> {
         let rt = &mut ctx.accounts.root_data;
         rt.root_authority = ctx.accounts.auth_data.key();
 
@@ -416,7 +416,7 @@ pub mod swap_contract {
         inp_developer_url: String,
         inp_source_url: String,
         inp_verify_url: String,
-    ) -> ProgramResult {
+    ) -> anchor_lang::Result<()> {
         let md = &mut ctx.accounts.program_info;
         md.semvar_major = VERSION_MAJOR;
         md.semvar_minor = VERSION_MINOR;
@@ -440,7 +440,7 @@ pub mod swap_contract {
     pub fn grant(ctx: Context<UpdateRBAC>,
         _inp_root_nonce: u8,
         inp_role: u32,
-    ) -> ProgramResult {
+    ) -> anchor_lang::Result<()> {
         let acc_rbac = &ctx.accounts.rbac_user.to_account_info();
         let acc_admn = &ctx.accounts.program_admin.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
@@ -499,7 +499,7 @@ pub mod swap_contract {
     pub fn revoke(ctx: Context<UpdateRBAC>,
         _inp_root_nonce: u8,
         inp_role: u32,
-    ) -> ProgramResult {
+    ) -> anchor_lang::Result<()> {
         let acc_admn = &ctx.accounts.program_admin.to_account_info(); // Program owner or network admin
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let acc_rbac = &ctx.accounts.rbac_user.to_account_info();
@@ -532,7 +532,7 @@ pub mod swap_contract {
         // Check if record exists
         let authrec = map_get(rd, DT::UserRBAC, authhash);
         if authrec.is_some() {
-            map_remove(rd, DT::UserRBAC, authhash).or(Err(ProgramError::from(ErrorCode::InternalError)))?;
+            map_remove(rd, DT::UserRBAC, authhash).or(Err(error!(ErrorCode::InternalError)))?;
             UserRBAC::free_index(rd, DT::UserRBAC, authrec.unwrap().slot())?;
             msg!("Atellix: Role revoked");
         } else {
@@ -570,11 +570,24 @@ pub mod swap_contract {
         inp_out_rate_swap: u64,         // Swap rate
         inp_out_rate_base: u64,         // Base rate
         inp_out_merchant: bool,         // Enable merchant swaps
-    ) -> ProgramResult {
+    ) -> anchor_lang::Result<()> {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let acc_inb = &ctx.accounts.inb_mint.to_account_info();
         let acc_out = &ctx.accounts.out_mint.to_account_info();
+
+        // Verify mints are correct data size
+        let acc_inb_data = acc_inb.try_borrow_data()?;
+        if acc_inb_data.len() != 82 {
+            msg!("Invalid inbound mint");
+            return Err(ErrorCode::InvalidParameters.into());
+        }
+
+        let acc_out_data = acc_out.try_borrow_data()?;
+        if acc_out_data.len() != 82 {
+            msg!("Invalid outbound mint");
+            return Err(ErrorCode::InvalidParameters.into());
+        }
 
         let admin_role = has_role(&acc_auth, Role::SwapAdmin, acc_admn.key);
         if admin_role.is_err() {
@@ -669,7 +682,7 @@ pub mod swap_contract {
         inp_fees_bps: u32,          // Fees basis points
         inp_merchant: bool,         // Enable merchant swap
         inp_event_uuid: u128,       // Event UUID
-    ) -> ProgramResult {
+    ) -> anchor_lang::Result<()> {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // SwapUpdate role
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let acc_inb = &ctx.accounts.inb_mint.to_account_info();
@@ -698,7 +711,7 @@ pub mod swap_contract {
 
         let clock = Clock::get()?;
         sw.slot = clock.slot;
-        sw.update_count = sw.update_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        sw.update_count = sw.update_count.checked_add(1).ok_or(error!(ErrorCode::Overflow))?;
         sw.locked = inp_locked;
         sw.oracle_verify = inp_oracle_verify;
         sw.oracle_verify_min = inp_verify_min;
@@ -744,7 +757,7 @@ pub mod swap_contract {
         _inp_swpd_nonce: u8,        // SwapData nonce
         inp_active: bool,           // Active flag
         inp_event_uuid: u128,       // Event UUID
-    ) -> ProgramResult {
+    ) -> anchor_lang::Result<()> {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // SwapAbort or SwapAdmin role
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
 
@@ -765,7 +778,7 @@ pub mod swap_contract {
         let clock = Clock::get()?;
         let sw = &mut ctx.accounts.swap_data;
         sw.active = inp_active;
-        sw.update_count = sw.update_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        sw.update_count = sw.update_count.checked_add(1).ok_or(error!(ErrorCode::Overflow))?;
         sw.slot = clock.slot;
 
         emit!(TransferEvent {
@@ -794,7 +807,7 @@ pub mod swap_contract {
         inp_amount: u64,            // Amount to mint
         inp_inbound_token: bool,    // Apply to inbound token (otherwise outbound)
         inp_event_uuid: u128,       // Event UUID
-    ) -> ProgramResult {
+    ) -> anchor_lang::Result<()> {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
         let acc_tadm = &ctx.accounts.token_admin.to_account_info(); // Token mint authority
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
@@ -840,17 +853,17 @@ pub mod swap_contract {
         let new_total;
         if inp_inbound_token { 
             let mut ti = sw.inb_token_data;
-            ti.amount = ti.amount.checked_add(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            ti.amount = ti.amount.checked_add(inp_amount).ok_or(error!(ErrorCode::Overflow))?;
             sw.inb_token_data = ti;
             new_total = ti.amount;
         } else {
             let mut ti = sw.out_token_data;
-            ti.amount = ti.amount.checked_add(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            ti.amount = ti.amount.checked_add(inp_amount).ok_or(error!(ErrorCode::Overflow))?;
             sw.out_token_data = ti;
             new_total = ti.amount;
         }
         sw.slot = clock.slot;
-        sw.update_count = sw.update_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        sw.update_count = sw.update_count.checked_add(1).ok_or(error!(ErrorCode::Overflow))?;
 
         //msg!("Atellix: New token amount: {}", ctx.accounts.token_info.amount.to_string());
         msg!("atellix-log");
@@ -880,7 +893,7 @@ pub mod swap_contract {
         inp_amount: u64,            // Amount to mint
         inp_inbound_token: bool,    // Apply to inbound token (otherwise outbound)
         inp_event_uuid: u128,       // Event UUID
-    ) -> ProgramResult {
+    ) -> anchor_lang::Result<()> {
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
         let acc_tadm = &ctx.accounts.token_admin.to_account_info(); // Token mint or transfer authority
@@ -928,17 +941,17 @@ pub mod swap_contract {
         let new_total;
         if inp_inbound_token { 
             let mut ti = sw.inb_token_data;
-            ti.amount = ti.amount.checked_add(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            ti.amount = ti.amount.checked_add(inp_amount).ok_or(error!(ErrorCode::Overflow))?;
             sw.inb_token_data = ti;
             new_total = ti.amount;
         } else {
             let mut ti = sw.out_token_data;
-            ti.amount = ti.amount.checked_add(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            ti.amount = ti.amount.checked_add(inp_amount).ok_or(error!(ErrorCode::Overflow))?;
             sw.out_token_data = ti;
             new_total = ti.amount;
         }
         sw.slot = clock.slot;
-        sw.update_count = sw.update_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        sw.update_count = sw.update_count.checked_add(1).ok_or(error!(ErrorCode::Overflow))?;
 
         //msg!("Atellix: New token amount: {}", new_total.to_string());
         msg!("atellix-log");
@@ -968,7 +981,7 @@ pub mod swap_contract {
         inp_amount: u64,            // Amount to mint
         inp_inbound_token: bool,    // Apply to inbound token (otherwise outbound)
         inp_event_uuid: u128,       // Event UUID
-    ) -> ProgramResult {
+    ) -> anchor_lang::Result<()> {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let acc_tdst = &ctx.accounts.token_dst.to_account_info();
@@ -1030,17 +1043,17 @@ pub mod swap_contract {
         let new_total;
         if inp_inbound_token { 
             let mut ti = sw.inb_token_data;
-            ti.amount = ti.amount.checked_sub(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            ti.amount = ti.amount.checked_sub(inp_amount).ok_or(error!(ErrorCode::Overflow))?;
             sw.inb_token_data = ti;
             new_total = ti.amount;
         } else {
             let mut ti = sw.out_token_data;
-            ti.amount = ti.amount.checked_sub(inp_amount).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+            ti.amount = ti.amount.checked_sub(inp_amount).ok_or(error!(ErrorCode::Overflow))?;
             sw.out_token_data = ti;
             new_total = ti.amount;
         }
         sw.slot = clock.slot;
-        sw.update_count = sw.update_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        sw.update_count = sw.update_count.checked_add(1).ok_or(error!(ErrorCode::Overflow))?;
 
         msg!("atellix-log");
         emit!(TransferEvent {
@@ -1071,7 +1084,7 @@ pub mod swap_contract {
         inp_is_buy: bool,           // Is "Buy" order, otherwise its a "Sell" order
                                     // Buy orders receive X out tokens, Sell orders send X inb tokens
         inp_tokens: u64,            // Number of tokens to send/receive (X tokens)
-    ) -> ProgramResult {
+    ) -> anchor_lang::Result<()> {
         let sw = &ctx.accounts.swap_data;
 
         // Verify swap data
@@ -1367,11 +1380,11 @@ pub mod swap_contract {
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
-    #[account(init, seeds = [program_id.as_ref()], bump, payer = program_admin)]
+    #[account(init, seeds = [program_id.as_ref()], bump, payer = program_admin, space = 40)]
     pub root_data: Account<'info, RootData>,
     #[account(zero)]
     pub auth_data: UncheckedAccount<'info>,
-    #[account(constraint = program.programdata_address() == Some(program_data.key()))]
+    #[account(constraint = program.programdata_address().unwrap() == Some(program_data.key()))]
     pub program: Program<'info, SwapContract>,
     #[account(constraint = program_data.upgrade_authority_address == Some(program_admin.key()))]
     pub program_data: Account<'info, ProgramData>,
@@ -1382,7 +1395,7 @@ pub struct Initialize<'info> {
 
 #[derive(Accounts)]
 pub struct UpdateMetadata<'info> {
-    #[account(constraint = program.programdata_address() == Some(program_data.key()))]
+    #[account(constraint = program.programdata_address().unwrap() == Some(program_data.key()))]
     pub program: Program<'info, SwapContract>,
     #[account(constraint = program_data.upgrade_authority_address == Some(program_admin.key()))]
     pub program_data: Account<'info, ProgramData>,
@@ -1400,7 +1413,7 @@ pub struct UpdateRBAC<'info> {
     pub root_data: Account<'info, RootData>,
     #[account(mut, constraint = root_data.root_authority == auth_data.key())]
     pub auth_data: UncheckedAccount<'info>,
-    #[account(constraint = program.programdata_address() == Some(program_data.key()))]
+    #[account(constraint = program.programdata_address().unwrap() == Some(program_data.key()))]
     pub program: Program<'info, SwapContract>,
     pub program_data: Account<'info, ProgramData>,
     #[account(mut)]
@@ -1417,10 +1430,12 @@ pub struct CreateSwap<'info> {
     pub auth_data: UncheckedAccount<'info>,
     #[account(mut)]
     pub swap_admin: Signer<'info>,
-    #[account(init, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref(), inb_swap_id.to_le_bytes().as_ref()], bump, payer = swap_admin)]
+    #[account(init, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref(), inb_swap_id.to_le_bytes().as_ref()], bump, payer = swap_admin, space = 331)]
     pub swap_data: Account<'info, SwapData>,
-    pub inb_mint: Account<'info, Mint>,
-    pub out_mint: Account<'info, Mint>,
+    #[account(owner = token::ID)]
+    pub inb_mint: UncheckedAccount<'info>,
+    #[account(owner = token::ID)]
+    pub out_mint: UncheckedAccount<'info>,
     pub fees_token: Account<'info, TokenAccount>,
     pub system_program: Program<'info, System>,
 }
@@ -1536,6 +1551,7 @@ pub struct TokenData {
 }
 unsafe impl Pod for TokenData {}
 unsafe impl Zeroable for TokenData {}
+// Size = 1 + 1 + 1 + 1 + 4 + 8 + 8 + 8 + 8 + 1 + 1
 
 #[account]
 #[derive(Default)]
@@ -1562,11 +1578,13 @@ pub struct SwapData {
     pub cost_basis: i128,
     pub cost_offset: i128,
 }
+// Size: 8 + 1 + 1 + 8 + 2 + 32 + 1 + 1 + 8 + 8 + 32 + 42 + 32 + 42 + 1 + 32 + 8 + 8 + 16 + 16 + 16 + 16 = 331
 
 #[account]
 pub struct RootData {
     pub root_authority: Pubkey,
 }
+// Size: 8 + 32 = 40
 
 impl RootData {
     pub fn root_authority(&self) -> Pubkey {
@@ -1655,16 +1673,16 @@ pub struct ProgramMetadata {
     pub semvar_minor: u32,
     pub semvar_patch: u32,
     pub program: Pubkey,
-    pub program_name: String,   // Max len 64
-    pub developer_name: String, // Max len 64
-    pub developer_url: String,  // Max len 128
-    pub source_url: String,     // Max len 128
-    pub verify_url: String,     // Max len 128
+    pub program_name: String,   // Max len 60
+    pub developer_name: String, // Max len 60
+    pub developer_url: String,  // Max len 124
+    pub source_url: String,     // Max len 124
+    pub verify_url: String,     // Max len 124
 }
 // 8 + (4 * 3) + (4 * 5) + (64 * 2) + (128 * 3) + 32
 // Data length (with discrim): 584 bytes
 
-#[error]
+#[error_code]
 pub enum ErrorCode {
     #[msg("Access denied")]
     AccessDenied,
