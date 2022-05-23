@@ -1275,7 +1275,7 @@ pub mod swap_contract {
             let root_signer = &[&root_seeds[..]];
             let na_program = ctx.remaining_accounts.get(merchant_offset + 2).unwrap(); // NetAuthority Program
             let na_accounts = RecordRevenue {
-                revenue_admin: ctx.remaining_accounts.get(merchant_offset + 1).unwrap().clone(), // Swap Root Account
+                revenue_admin: ctx.remaining_accounts.get(merchant_offset).unwrap().clone(), // Swap Root Account
                 merchant_approval: ctx.remaining_accounts.get(merchant_offset + 3).unwrap().clone(),
             };
             let na_ctx = CpiContext::new_with_signer(na_program.clone(), na_accounts, root_signer);
