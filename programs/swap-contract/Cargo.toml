@@ -18,7 +18,7 @@ default = ["no-log-ix-name"]
 [dependencies]
 anchor-lang = { version = "0.24.2", features = ["init-if-needed"] }
 anchor-spl = "0.24.2"
-switchboard-program = "0.1.59"
+switchboard-v2 = "0.1.10"
 solana-program = "1.9.29"
 bytemuck = "1.7.2"
 num_enum = "0.5.4"

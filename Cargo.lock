@@ -899,15 +899,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quick-protobuf"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ca6639207ac869e31cca06b8adbc7676278f22b321e51115766009b4f192dbb"
-dependencies = [
- "byteorder",
-]
-
-[[package]]
 name = "quote"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -992,16 +983,6 @@ dependencies = [
  "arrayvec",
  "num-traits",
  "serde",
-]
-
-[[package]]
-name = "rust_decimal_macros"
-version = "1.23.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4c70be9367d4bc095d10b48d41b819d09ed4dafc528765a144d32ed1d530654"
-dependencies = [
- "quote",
- "rust_decimal",
 ]
 
 [[package]]
@@ -1258,6 +1239,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6bdef32e8150c2a081110b42772ffe7d7c9032b606bc226c8260fd97e0976601"
 
 [[package]]
+name = "superslice"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab16ced94dbd8a46c82fd81e3ed9a8727dac2977ea869d217bcc4ea1f122e81f"
+
+[[package]]
 name = "swap-contract"
 version = "0.1.0"
 dependencies = [
@@ -1269,52 +1256,21 @@ dependencies = [
  "num_enum",
  "slab-alloc",
  "solana-program",
- "switchboard-program",
+ "switchboard-v2",
 ]
 
 [[package]]
-name = "switchboard-program"
-version = "0.1.59"
+name = "switchboard-v2"
+version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57445d78029687264e245eb949e5c928e3aecd64a0afea770fc4fb2a826e60e0"
+checksum = "3031f4e296ae9d1d8c493f23ee94cbe96d6781826ac6ed03e01ea82af5dbaf49"
 dependencies = [
- "bincode",
- "borsh",
- "byteorder",
- "quick-protobuf",
- "solana-program",
- "switchboard-protos",
- "switchboard-utils",
- "zerocopy",
-]
-
-[[package]]
-name = "switchboard-protos"
-version = "0.1.60"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e2d89875ff72d12ea7918d6ccd82d1ac5eab54b3a9d1bd7356fa6905801aa72"
-dependencies = [
- "bincode",
- "borsh",
- "byteorder",
- "quick-protobuf",
-]
-
-[[package]]
-name = "switchboard-utils"
-version = "0.1.32"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0bc027ee269f663f2a6a848ee3c819936dbdbd35d74b9c4fb2aaf3f0360d903f"
-dependencies = [
- "bincode",
- "borsh",
- "byteorder",
- "quick-protobuf",
+ "anchor-lang",
+ "anchor-spl",
+ "bytemuck",
  "rust_decimal",
- "rust_decimal_macros",
  "solana-program",
- "switchboard-protos",
- "zerocopy",
+ "superslice",
 ]
 
 [[package]]
@@ -1325,18 +1281,6 @@ checksum = "a07e33e919ebcd69113d5be0e4d70c5707004ff45188910106854f38b960df4a"
 dependencies = [
  "proc-macro2",
  "quote",
- "unicode-xid",
-]
-
-[[package]]
-name = "synstructure"
-version = "0.12.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f36bdaa60a83aca3921b5259d5400cbf5e90fc51931376a9bd4a0eb79aa7210f"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
  "unicode-xid",
 ]
 
@@ -1520,27 +1464,6 @@ name = "yansi"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09041cd90cf85f7f8b2df60c646f853b7f535ce68f85244eb6731cf89fa498ec"
-
-[[package]]
-name = "zerocopy"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6580539ad917b7c026220c4b3f2c08d52ce54d6ce0dc491e66002e35388fab46"
-dependencies = [
- "byteorder",
- "zerocopy-derive",
-]
-
-[[package]]
-name = "zerocopy-derive"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d498dbd1fd7beb83c86709ae1c33ca50942889473473d287d56ce4770a18edfb"
-dependencies = [
- "proc-macro2",
- "syn",
- "synstructure",
-]
 
 [[package]]
 name = "zeroize"

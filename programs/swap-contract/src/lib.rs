@@ -1,10 +1,10 @@
+#[allow(unaligned_references)]
 use crate::program::SwapContract;
-use std::{ string::String, result::Result as FnResult, convert::TryFrom };
+use std::{ string::String, result::Result as FnResult, convert::{ TryInto, TryFrom } };
 use bytemuck::{ Pod, Zeroable };
 use byte_slice_cast::*;
 use num_enum::{ TryFromPrimitive, IntoPrimitive };
-use switchboard_program;
-use switchboard_program::{ FastRoundResultAccountData };
+pub use switchboard_v2::AggregatorAccountData;
 use anchor_lang::prelude::*;
 use anchor_spl::token::{ self, Token, TokenAccount, MintTo, Transfer };
 use anchor_spl::associated_token::{ AssociatedToken };
@@ -1210,8 +1210,7 @@ pub mod swap_contract {
             oracle_log_inuse = true;
             let oracle_type = OracleType::try_from(sw.oracle_type).unwrap();
             if oracle_type == OracleType::Switchboard {
-                let feed_data = FastRoundResultAccountData::deserialize(&acc_orac.try_borrow_data()?).unwrap();
-                oracle_val = feed_data.result.result;
+                oracle_val = AggregatorAccountData::new(acc_orac)?.get_result()?.try_into()?;
             } else {
                 msg!("Invalid oracle type");
                 return Err(ErrorCode::InternalError.into());

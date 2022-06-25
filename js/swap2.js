@@ -14,7 +14,7 @@ const provider = anchor.Provider.env()
 anchor.setProvider(provider)
 const swapContract = anchor.workspace.SwapContract
 const swapContractPK = swapContract.programId
-const oraclePK = new PublicKey('DpoK8Zz69APV9ntjuY9C4LZCxANYMV56M2cbXEdkjxME')
+const oraclePK = new PublicKey('GvDMxPzN1sCj7L26YDK2HnMRXEQmQ2aemov8YBtPS7vR')
 
 const SPL_ASSOCIATED_TOKEN = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
 async function associatedTokenAddress(walletAddress, tokenMintAddress) {
