@@ -29,7 +29,7 @@ async function main() {
 
     const swapCache = await jsonFileRead('../../data/swap.json')
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
-    swapAdmin1 = importSecretKey(netKeys['swap-update-1-secret'])
+    swapAdmin1 = importSecretKey('yhaxxhhvbtn0xbg3b53a3yknh5zyk9t720gsj6ypzzmsqd4bfc880dcvxmfybesczgny7qa2tjzbzdvjc2fmaad2fm7h14evyzeyecr')
 
     let swapName = 'wsol-usdv'
     let swapSpec = await jsonFileRead('../../data/swap-' + swapName + '.json')
@@ -45,27 +45,14 @@ async function main() {
 
     swapDataPK = new PublicKey(swapData.pubkey)
 
-    console.log('Update Swap')
-    let oraclePK = new PublicKey('GvDMxPzN1sCj7L26YDK2HnMRXEQmQ2aemov8YBtPS7vR')
+    console.log('Update Swap Offset')
 
-    let res = await swapContract.rpc.updateSwap(
+    let res = await swapContract.rpc.updateSwapOffset(
         swapId,
         rootData.nonce,
         swapData.nonce,
-        false, // locked / unlocked
-        false, // oracle range check
-        new anchor.BN(0), // range min
-        new anchor.BN(0), // range max
-        true, // swap direction
-        false, // basis rates
-        true, // oracle rates
-        false, // oracle max
-        false, // oracle inverse
-        new anchor.BN(10 * 10**4), // swap rate
-        new anchor.BN(10 * 10**9), // base rate
-        50, // fees basis points
-        true, // fees on inbound token
-        false, // merchant swap
+        new anchor.BN("123400"), // tokens outstanding offset delta
+        new anchor.BN("364593180"), // cost basis offset delta
         new anchor.BN(uuid1), // uuid
         {
             accounts: {
@@ -77,9 +64,6 @@ async function main() {
                 inbMint: collateralMint,
                 outMint: issuingMint,
             },
-            remainingAccounts: [
-                { pubkey: oraclePK, isWritable: false, isSigner: false },
-            ],
             signers: [swapAdmin1],
         }
     )

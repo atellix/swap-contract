@@ -190,11 +190,18 @@ fn calculate_rates(td: &TokenData, sw: &SwapData, swap_rate: &mut u128, base_rat
     if td.basis_rates {
         //msg!("Atellix: Use basis rates");
         let mut tokens_outstanding: i128 = sw.tokens_outstanding.checked_add(sw.tokens_offset).ok_or(error!(ErrorCode::Overflow))?;
-        let tokens_cost: i128 = sw.cost_basis.checked_add(sw.cost_offset).ok_or(error!(ErrorCode::Overflow))?;
+        let mut tokens_cost: i128 = sw.cost_basis.checked_add(sw.cost_offset).ok_or(error!(ErrorCode::Overflow))?;
         // Calculate basis price and multiply time 10^8 to compare to oracle prices
         let base_i: i128 = 10;
         let cost_decimals: i128 = base_i.pow(adjust_u);
+        let inb_decimals: i128 = base_i.pow(sw.inb_token_data.decimals as u32);
+        let out_decimals: i128 = base_i.pow(sw.out_token_data.decimals as u32);
+        // Multiply by base of 10^8 twice to scale each token to its decimals
+        tokens_cost = tokens_cost.checked_mul(cost_decimals).ok_or(error!(ErrorCode::Overflow))?;
+        tokens_cost = tokens_cost.checked_div(inb_decimals).ok_or(error!(ErrorCode::Overflow))?;
         tokens_outstanding = tokens_outstanding.checked_mul(cost_decimals).ok_or(error!(ErrorCode::Overflow))?;
+        tokens_outstanding = tokens_outstanding.checked_mul(cost_decimals).ok_or(error!(ErrorCode::Overflow))?;
+        tokens_outstanding = tokens_outstanding.checked_div(out_decimals).ok_or(error!(ErrorCode::Overflow))?;
         tokens_outstanding = tokens_outstanding.checked_div(tokens_cost).ok_or(error!(ErrorCode::Overflow))?;
         let basis_price: u128 = u128::try_from(tokens_outstanding).map_err(|_| ErrorCode::Overflow)?;
         if basis_price == 0 {
@@ -209,6 +216,7 @@ fn calculate_rates(td: &TokenData, sw: &SwapData, swap_rate: &mut u128, base_rat
             abs_decimals = abs_decimals.abs();
             let abs_decimals_u: u32 = u32::try_from(abs_decimals).map_err(|_| ErrorCode::Overflow)?;
             let adjust_decimals: u128 = base_u.checked_pow(abs_decimals_u).ok_or(error!(ErrorCode::Overflow))?;
+            //msg!("Atellix: Orcale Max: {} Inverse: {} Value: {}", td.oracle_max.to_string(), td.oracle_inverse.to_string(), oracle_log_val.to_string());
             if td.oracle_inverse {
                 *swap_rate = basis_price;
                 if td.oracle_max && oracle_log_val > *swap_rate {
@@ -365,30 +373,47 @@ fn calculate_fee(
 }
 
 pub fn update_swap_result(swp: &mut SwapData, swap_direction: bool, tokens_inb: u64, tokens_out: u64, tokens_fee: u64, slot: u64) -> anchor_lang::Result<()> {
+    let mut inb_amount: u64 = swp.inb_token_data.amount;
+    let mut out_amount: u64 = swp.out_token_data.amount;
     if swap_direction {
-        swp.inb_token_data.amount = swp.inb_token_data.amount.checked_add(tokens_inb).ok_or(error!(ErrorCode::Overflow))?;
-        swp.out_token_data.amount = swp.out_token_data.amount.checked_sub(tokens_out).ok_or(error!(ErrorCode::Overflow))?;
+        inb_amount = inb_amount.checked_add(tokens_inb).ok_or(error!(ErrorCode::Overflow))?;
+        out_amount = out_amount.checked_sub(tokens_out).ok_or(error!(ErrorCode::Overflow))?;
         swp.cost_basis = swp.cost_basis.checked_add(tokens_inb as i128).ok_or(error!(ErrorCode::Overflow))?;
         swp.tokens_outstanding = swp.tokens_outstanding.checked_add(tokens_out as i128).ok_or(error!(ErrorCode::Overflow))?;
-        if !swp.fees_inbound {
+        if swp.fees_inbound {
+            // OK
+            inb_amount = inb_amount.checked_sub(tokens_fee).ok_or(error!(ErrorCode::Overflow))?;
+            swp.cost_basis = swp.cost_basis.checked_sub(tokens_fee as i128).ok_or(error!(ErrorCode::Overflow))?;
+        } else {
+            // OK
+            out_amount = out_amount.checked_sub(tokens_fee).ok_or(error!(ErrorCode::Overflow))?;
             swp.tokens_outstanding = swp.tokens_outstanding.checked_add(tokens_fee as i128).ok_or(error!(ErrorCode::Overflow))?;
         }
     } else {
-        swp.inb_token_data.amount = swp.inb_token_data.amount.checked_sub(tokens_out).ok_or(error!(ErrorCode::Overflow))?;
-        swp.out_token_data.amount = swp.out_token_data.amount.checked_add(tokens_inb).ok_or(error!(ErrorCode::Overflow))?;
+        inb_amount = inb_amount.checked_sub(tokens_out).ok_or(error!(ErrorCode::Overflow))?;
+        out_amount = out_amount.checked_add(tokens_inb).ok_or(error!(ErrorCode::Overflow))?;
         swp.cost_basis = swp.cost_basis.checked_sub(tokens_out as i128).ok_or(error!(ErrorCode::Overflow))?;
         swp.tokens_outstanding = swp.tokens_outstanding.checked_sub(tokens_inb as i128).ok_or(error!(ErrorCode::Overflow))?;
         if swp.fees_inbound {
+            // OK
             swp.cost_basis = swp.cost_basis.checked_sub(tokens_fee as i128).ok_or(error!(ErrorCode::Overflow))?;
+        } else {
+            // OK
+            out_amount = out_amount.checked_sub(tokens_fee).ok_or(error!(ErrorCode::Overflow))?;
+            swp.tokens_outstanding = swp.tokens_outstanding.checked_add(tokens_fee as i128).ok_or(error!(ErrorCode::Overflow))?;
         }
     }
+    let mut inb_data: TokenData = swp.inb_token_data;
+    let mut out_data: TokenData = swp.out_token_data;
     if swp.fees_inbound {
-        swp.inb_token_data.amount = swp.inb_token_data.amount.checked_sub(tokens_fee).ok_or(error!(ErrorCode::Overflow))?;
-        swp.inb_token_data.fees_total = swp.inb_token_data.fees_total.checked_add(tokens_fee).ok_or(error!(ErrorCode::Overflow))?;
+        inb_data.fees_total = inb_data.fees_total.checked_add(tokens_fee).ok_or(error!(ErrorCode::Overflow))?;
     } else {
-        swp.out_token_data.amount = swp.out_token_data.amount.checked_sub(tokens_fee).ok_or(error!(ErrorCode::Overflow))?;
-        swp.out_token_data.fees_total = swp.out_token_data.fees_total.checked_add(tokens_fee).ok_or(error!(ErrorCode::Overflow))?;
+        out_data.fees_total = out_data.fees_total.checked_add(tokens_fee).ok_or(error!(ErrorCode::Overflow))?;
     }
+    inb_data.amount = inb_amount;
+    out_data.amount = out_amount;
+    swp.inb_token_data = inb_data;
+    swp.out_token_data = out_data;
     swp.swap_tx_count = swp.swap_tx_count.checked_add(1).ok_or(error!(ErrorCode::Overflow))?;
     swp.slot = slot;
     Ok(())
@@ -680,6 +705,7 @@ pub mod swap_contract {
         inp_swap_rate: u64,         // Swap rate
         inp_base_rate: u64,         // Base rate
         inp_fees_bps: u32,          // Fees basis points
+        inp_fees_inbound: bool,     // Fees on inbound token
         inp_merchant: bool,         // Enable merchant swap
         inp_event_uuid: u128,       // Event UUID
     ) -> anchor_lang::Result<()> {
@@ -713,6 +739,8 @@ pub mod swap_contract {
         sw.slot = clock.slot;
         sw.update_count = sw.update_count.checked_add(1).ok_or(error!(ErrorCode::Overflow))?;
         sw.locked = inp_locked;
+        sw.fees_token = *ctx.accounts.fees_token.to_account_info().key;
+        sw.fees_inbound = inp_fees_inbound;
         sw.oracle_verify = inp_oracle_verify;
         sw.oracle_verify_min = inp_verify_min;
         sw.oracle_verify_max = inp_verify_max;
@@ -781,6 +809,7 @@ pub mod swap_contract {
         sw.update_count = sw.update_count.checked_add(1).ok_or(error!(ErrorCode::Overflow))?;
         sw.slot = clock.slot;
 
+        msg!("atellix-log");
         emit!(TransferEvent {
             event_hash: 283342772248480963119829605187167420305, // solana/program/atx-swap-contract/update_swap_active
             event_uuid: inp_event_uuid,
@@ -794,6 +823,51 @@ pub mod swap_contract {
             amount: 0,
             new_total: 0,
             active: sw.active,
+        });
+
+        Ok(())
+    }
+
+    pub fn update_swap_offset(ctx: Context<UpdateSwap>,
+        _inp_swap_id: u16,          // SwapData Index ID
+        _inp_root_nonce: u8,        // RootData nonce
+        _inp_swpd_nonce: u8,        // SwapData nonce
+        inp_tokens_offset_delta: i128,
+        inp_cost_offset_delta: i128,
+        inp_event_uuid: u128,       // Event UUID
+    ) -> anchor_lang::Result<()> {
+        let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // SwapOffset role
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+
+        let admin_role = has_role(&acc_auth, Role::SwapOffset, acc_admn.key);
+        if admin_role.is_err() {
+            msg!("No swap offset role");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        let clock = Clock::get()?;
+        let sw = &mut ctx.accounts.swap_data;
+        if inp_tokens_offset_delta != 0 {
+            sw.tokens_offset = sw.tokens_offset.checked_add(inp_tokens_offset_delta).ok_or(error!(ErrorCode::Overflow))?;
+        }
+        if inp_cost_offset_delta != 0 {
+            sw.cost_offset = sw.cost_offset.checked_add(inp_cost_offset_delta).ok_or(error!(ErrorCode::Overflow))?;
+        }
+        sw.update_count = sw.update_count.checked_add(1).ok_or(error!(ErrorCode::Overflow))?;
+        sw.slot = clock.slot;
+
+        msg!("atellix-log");
+        emit!(OffsetEvent {
+            event_hash: 211632651499870536637874094011895985483, // solana/program/atx-swap-contract/update_swap_offset
+            event_uuid: inp_event_uuid,
+            update_id: sw.update_count,
+            slot: clock.slot,
+            user: acc_admn.key(),
+            swap_data: sw.key(),
+            tokens_offset_delta: inp_tokens_offset_delta,
+            tokens_offset: sw.tokens_offset,
+            cost_offset_delta: inp_cost_offset_delta,
+            cost_offset: sw.cost_offset,
         });
 
         Ok(())
@@ -1449,6 +1523,7 @@ pub struct UpdateSwap<'info> {
     #[account(mut, seeds = [inb_mint.key().as_ref(), out_mint.key().as_ref(), _inp_swap_id.to_le_bytes().as_ref()], bump = _inp_swpd_nonce)]
     pub swap_data: Account<'info, SwapData>,
     pub swap_admin: Signer<'info>,
+    pub fees_token: Account<'info, TokenAccount>,
     pub inb_mint: UncheckedAccount<'info>,
     pub out_mint: UncheckedAccount<'info>,
 }
@@ -1642,18 +1717,19 @@ pub struct TransferEvent {
     pub active: bool,
 }
 
-/*#[event]
+#[event]
 pub struct OffsetEvent {
     pub event_hash: u128,
     pub event_uuid: u128,
+    pub update_id: u64,
     pub slot: u64,
     pub user: Pubkey,
     pub swap_data: Pubkey,
-    pub offset_account: Pubkey,
-    pub offset_tx_id: u64,
-    pub adjust_tokens_offset: i128,
-    pub adjust_cost_offset: i128,
-}*/
+    pub tokens_offset_delta: i128,
+    pub tokens_offset: i128,
+    pub cost_offset_delta: i128,
+    pub cost_offset: i128,
+}
 
 /*#[account]
 #[derive(Default)]

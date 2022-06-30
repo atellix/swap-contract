@@ -31,27 +31,11 @@ async function main() {
     const swapCache = await jsonFileRead('../../data/swap.json')
     const authDataPK = new PublicKey(swapCache.swapContractRBAC)
     
-    console.log('Grant: Swap Withdraw To: ' + manager)
-    console.log(await swapContract.rpc.grant(
-        rootData.nonce,
-        4, // SwapWithdraw
-        {
-            accounts: {
-                program: swapContractPK,
-                programAdmin: provider.wallet.publicKey,
-                programData: new PublicKey(programData),
-                rootData: new PublicKey(rootData.pubkey),
-                authData: authDataPK,
-                rbacUser: new PublicKey(manager),
-            },
-        }
-    ))
-    for (var x = 0; x < permit.length; x++) {
-        let dst = permit[x]
-        console.log('Grant: Swap Permit To: ' + dst)
+    if (false) {
+        console.log('Grant: Swap Withdraw To: ' + manager)
         console.log(await swapContract.rpc.grant(
             rootData.nonce,
-            7, // SwapPermit
+            4, // SwapWithdraw
             {
                 accounts: {
                     program: swapContractPK,
@@ -59,10 +43,47 @@ async function main() {
                     programData: new PublicKey(programData),
                     rootData: new PublicKey(rootData.pubkey),
                     authData: authDataPK,
-                    rbacUser: new PublicKey(dst),
+                    rbacUser: new PublicKey(manager),
                 },
             }
         ))
+    }
+    if (true) {
+        console.log('Grant: Swap Offset To: ' + manager)
+        console.log(await swapContract.rpc.grant(
+            rootData.nonce,
+            8, // SwapOffset
+            {
+                accounts: {
+                    program: swapContractPK,
+                    programAdmin: provider.wallet.publicKey,
+                    programData: new PublicKey(programData),
+                    rootData: new PublicKey(rootData.pubkey),
+                    authData: authDataPK,
+                    rbacUser: new PublicKey(manager),
+                },
+            }
+        ))
+    }
+    if (false) {
+        for (var x = 0; x < permit.length; x++) {
+            let dst = permit[x]
+            console.log('Grant: Swap Permit To: ' + dst)
+            console.log(await swapContract.rpc.grant(
+                rootData.nonce,
+                7, // SwapPermit
+                {
+                    accounts: {
+                        program: swapContractPK,
+                        programAdmin: provider.wallet.publicKey,
+                        programData: new PublicKey(programData),
+                        rootData: new PublicKey(rootData.pubkey),
+                        authData: authDataPK,
+                        rbacUser: new PublicKey(dst),
+                    },
+                }
+            ))
+        }
     }
 }
 
