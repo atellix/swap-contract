@@ -31,6 +31,23 @@ async function main() {
     const swapCache = await jsonFileRead('../../data/swap.json')
     const authDataPK = new PublicKey(swapCache.swapContractRBAC)
     
+    if (true) {
+        console.log('Grant: Swap Deposit To: ' + manager)
+        console.log(await swapContract.rpc.grant(
+            rootData.nonce,
+            3, // SwapDeposit
+            {
+                accounts: {
+                    program: swapContractPK,
+                    programAdmin: provider.wallet.publicKey,
+                    programData: new PublicKey(programData),
+                    rootData: new PublicKey(rootData.pubkey),
+                    authData: authDataPK,
+                    rbacUser: new PublicKey(manager),
+                },
+            }
+        ))
+    }
     if (false) {
         console.log('Grant: Swap Withdraw To: ' + manager)
         console.log(await swapContract.rpc.grant(
@@ -48,7 +65,7 @@ async function main() {
             }
         ))
     }
-    if (true) {
+    if (false) {
         console.log('Grant: Swap Offset To: ' + manager)
         console.log(await swapContract.rpc.grant(
             rootData.nonce,
