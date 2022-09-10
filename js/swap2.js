@@ -45,10 +45,6 @@ async function main() {
     }
     const netData = JSON.parse(ndjs.toString())
 
-    var jsres = await exec('solana program show --output json ' + swapContractPK.toString())
-    var res = JSON.parse(jsres.stdout)
-    const programData = res.programdataAddress
-
     const rootData = await programAddress([swapContractPK.toBuffer()])
 
     var tokenMint1

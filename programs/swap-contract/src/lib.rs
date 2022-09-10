@@ -4,7 +4,7 @@ use std::{ string::String, result::Result as FnResult, convert::{ TryInto, TryFr
 use bytemuck::{ Pod, Zeroable };
 use byte_slice_cast::*;
 use num_enum::{ TryFromPrimitive, IntoPrimitive };
-pub use switchboard_v2::AggregatorAccountData;
+use switchboard_v2::AggregatorAccountData;
 use anchor_lang::prelude::*;
 use anchor_spl::token::{ self, Token, TokenAccount, MintTo, Transfer };
 use anchor_spl::associated_token::{ AssociatedToken };
@@ -12,8 +12,6 @@ use solana_program::{
     account_info::AccountInfo,
     clock::Clock
 };
-
-use net_authority::{ cpi::accounts::RecordRevenue, MerchantApproval };
 
 extern crate slab_alloc;
 use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, SlabVec, SlabTreeError };
@@ -44,7 +42,7 @@ pub enum DT { // Data types
 #[derive(PartialEq, Debug, Eq, Copy, Clone, TryFromPrimitive)]
 pub enum Role {             // Role-based access control:
     NetworkAdmin,           // 0 - Can manage RBAC for other users
-    NetworkAuth,            // 1 - Valid network authority for merchant approvals
+    NetworkAuth,            // 1 - Valid network authority for merchant approvals (*** deprecated ***)
     SwapAdmin,              // 2 - Can create swap exchanges and set parameters, rates, etc...
     SwapDeposit,            // 3 - Can deposit to swap contracts
     SwapWithdraw,           // 4 - Can withdraw from swap contracts
@@ -267,10 +265,9 @@ fn calculate_swap(
     swap_rate: u128,
     base_rate: u128,
     extra_decimals: u128,
-    merchant: bool,
 ) -> FnResult<u128, ProgramError> {
     let nmr_1: u128;
-    let fees_bps: u32 = if merchant { 0 } else { td.fees_bps };
+    let fees_bps: u32 = td.fees_bps;
     if fees_bps > 0 {
         let mut fee_part: u128 = input_val.checked_mul(fees_bps as u128).ok_or(error!(ErrorCode::Overflow))?;
         fee_part = fee_part.checked_div(10000).ok_or(error!(ErrorCode::Overflow))?;
@@ -319,11 +316,10 @@ fn calculate_fee(
     swap_rate: u128,
     base_rate: u128,
     extra_decimals: u128,
-    merchant: bool,
 ) -> FnResult<u64, ProgramError> {
     let mut top_pow: bool = false; // Use extra_decimals for actual value
     let mut btm_pow: bool = false;
-    let fees_bps: u32 = if merchant { 0 } else { td.fees_bps };
+    let fees_bps: u32 = td.fees_bps;
     if fees_bps > 0 {
         let mut fee_1 = input_val.checked_mul(fees_bps as u128).ok_or(error!(ErrorCode::Overflow))?;
         fee_1 = fee_1.checked_div(10000).ok_or(error!(ErrorCode::Overflow))?;
@@ -417,6 +413,11 @@ pub fn update_swap_result(swp: &mut SwapData, swap_direction: bool, tokens_inb: 
     swp.swap_tx_count = swp.swap_tx_count.checked_add(1).ok_or(error!(ErrorCode::Overflow))?;
     swp.slot = slot;
     Ok(())
+}
+
+pub fn oracle_quote<'c, 'info>(data: &'c AccountInfo<'info>) -> anchor_lang::Result<f64> {
+    let oracle_val: f64 = AggregatorAccountData::new(data)?.get_result()?.try_into()?;
+    Ok(oracle_val)
 }
 
 #[program]
@@ -584,7 +585,7 @@ pub mod swap_contract {
         inp_inb_fees_bps: u32,          // Swap fees in basis points
         inp_inb_rate_swap: u64,         // Swap rate
         inp_inb_rate_base: u64,         // Base rate
-        inp_inb_merchant: bool,         // Enable merchant swaps
+        _inp_inb_merchant: bool,        // Enable merchant swaps (*** deprecated ***)
         // Outbound tokens
         inp_out_decimals: u8,           // Decimals
         inp_out_basis_rates: bool,      // Uses cost-basis rates
@@ -594,7 +595,7 @@ pub mod swap_contract {
         inp_out_fees_bps: u32,          // Swap fees in basis points
         inp_out_rate_swap: u64,         // Swap rate
         inp_out_rate_base: u64,         // Base rate
-        inp_out_merchant: bool,         // Enable merchant swaps
+        _inp_out_merchant: bool,        // Enable merchant swaps (*** deprecated ***)
     ) -> anchor_lang::Result<()> {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // Swap admin
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
@@ -647,7 +648,7 @@ pub mod swap_contract {
             fees_bps: inp_inb_fees_bps,
             fees_total: 0,
             amount: 0,
-            merchant: inp_inb_merchant,
+            merchant: false, // *** deprecated ***
         };
         let out_token = TokenData {
             basis_rates: inp_out_basis_rates,
@@ -660,7 +661,7 @@ pub mod swap_contract {
             fees_bps: inp_out_fees_bps,
             fees_total: 0,
             amount: 0,
-            merchant: inp_out_merchant,
+            merchant: false, // *** deprecated ***
         };
 
         let clock = Clock::get()?;
@@ -706,7 +707,7 @@ pub mod swap_contract {
         inp_base_rate: u64,         // Base rate
         inp_fees_bps: u32,          // Fees basis points
         inp_fees_inbound: bool,     // Fees on inbound token
-        inp_merchant: bool,         // Enable merchant swap
+        _inp_merchant: bool,        // Enable merchant swap
         inp_event_uuid: u128,       // Event UUID
     ) -> anchor_lang::Result<()> {
         let acc_admn = &ctx.accounts.swap_admin.to_account_info(); // SwapUpdate role
@@ -758,7 +759,7 @@ pub mod swap_contract {
         current_side.rate_swap = inp_swap_rate;
         current_side.rate_base = inp_base_rate;
         current_side.fees_bps = inp_fees_bps;
-        current_side.merchant = inp_merchant;
+        current_side.merchant = false; // *** Deprecated ***
 
         msg!("atellix-log");
         emit!(TransferEvent {
@@ -1148,13 +1149,14 @@ pub mod swap_contract {
         Ok(())
     }
 
-    pub fn swap<'info>(ctx: Context<'_, '_, '_, 'info, Swap<'info>>,
+    //pub fn swap<'info>(ctx: Context<'_, '_, '_, 'info, Swap<'info>>,
+    pub fn swap<'a, 'b, 'c, 'info>(ctx: Context<'a, 'b, 'c, 'info, Swap<'info>>,
         inp_swpd_nonce: u8,         // SwapData nonce
         inp_inb_nonce: u8,          // Associated token nonce for inb_token_dst
         inp_out_nonce: u8,          // Associated token nonce for out_token_src
-        inp_root_nonce: u8,         // RootData nonce (merchant only)
+        _inp_root_nonce: u8,        // RootData nonce (merchant only, *** deprecated ***)
         inp_swap_direction: bool,   // true = "Mint": Inbound -> Outbound ; false = "Burn": Outbound -> Inbound
-        inp_merchant: bool,         // Merchant swap
+        _inp_merchant: bool,        // Merchant swap (*** deprecated ***)
         inp_is_buy: bool,           // Is "Buy" order, otherwise its a "Sell" order
                                     // Buy orders receive X out tokens, Sell orders send X inb tokens
         inp_tokens: u64,            // Number of tokens to send/receive (X tokens)
@@ -1222,56 +1224,6 @@ pub mod swap_contract {
             return Err(ErrorCode::InvalidDerivedAccount.into());
         }
 
-        // Verify merchant approval for merchant swaps
-        let mut merchant_revenue: u64 = 0;
-        let mut merchant_offset: usize = 0;
-        let mut merchant_tx_id: u64 = 0;
-        if inp_merchant {
-            // Remaining accounts: (+ merchant_offset of 1 if oracle in use)
-            // 0 - Swap Root
-            // 1 - Swap Auth
-            // 2 - Net Authority Program
-            // 3 - Merchant Approval
-            if !current_data.merchant {
-                msg!("Not enabled for merchant swap");
-                return Err(ErrorCode::AccessDenied.into());
-            }
-            msg!("Merchant Swap");
-            if current_data.oracle_rates || sw.oracle_verify {
-                merchant_offset = 1;
-            }
-            let (root_account, _bump_root) = Pubkey::find_program_address(
-                &[ctx.program_id.as_ref()],
-                ctx.program_id,
-            );
-
-            let acc_root = ctx.remaining_accounts.get(merchant_offset).unwrap();
-            verify_matching_accounts(acc_root.key, &root_account, Some(String::from("Invalid root data")))?;
-            let mut root_data: &[u8] = &acc_root.try_borrow_data()?;
-            let root = RootData::try_deserialize(&mut root_data)?;
-            let acc_auth = ctx.remaining_accounts.get(merchant_offset + 1).unwrap();
-            verify_matching_accounts(acc_auth.key, &root.root_authority, Some(String::from("Invalid auth data")))?;
-            let acc_mrch_approval = ctx.remaining_accounts.get(merchant_offset + 3).unwrap();
-            let netauth_role = has_role(&acc_auth, Role::NetworkAuth, acc_mrch_approval.owner);
-            if netauth_role.is_err() {
-                msg!("Invalid network authority");
-                return Err(ErrorCode::AccessDenied.into());
-            }
-            let mut aprv_data: &[u8] = &acc_mrch_approval.try_borrow_data()?;
-            let mrch_approval = MerchantApproval::try_deserialize(&mut aprv_data)?;
-            if ! mrch_approval.active {
-                msg!("Inactive merchant approval");
-                return Err(ErrorCode::AccessDenied.into());
-            }
-            let (mrch_token, _bump_seed) = Pubkey::find_program_address(
-                &[mrch_approval.merchant_key.as_ref(), Token::id().as_ref(), mrch_approval.token_mint.as_ref()],
-                &AssociatedToken::id(),
-            );
-            verify_matching_accounts(acc_inb_token_src.key, &mrch_token, Some(String::from("Invalid merchant associated token")))?;
-            merchant_revenue = mrch_approval.revenue;
-            //msg!("Atellix: Merchant Revenue: {}", merchant_revenue.to_string());
-        }
-
         let mut oracle_val: f64 = 0.0;
         let mut oracle_log_inuse: bool = false;
         let mut oracle_log_val: u128 = 0;
@@ -1284,7 +1236,8 @@ pub mod swap_contract {
             oracle_log_inuse = true;
             let oracle_type = OracleType::try_from(sw.oracle_type).unwrap();
             if oracle_type == OracleType::Switchboard {
-                oracle_val = AggregatorAccountData::new(acc_orac)?.get_result()?.try_into()?;
+                //verify_matching_accounts(acc_orac.owner, &SWITCHBOARD_PROGRAM_ID, Some(String::from("Invalid oracle owner")))?; // Production-only
+                oracle_val = oracle_quote(acc_orac)?;
             } else {
                 msg!("Invalid oracle type");
                 return Err(ErrorCode::InternalError.into());
@@ -1314,7 +1267,7 @@ pub mod swap_contract {
         calculate_rates(current_data, sw, &mut swap_rate, &mut base_rate, &mut extra_decimals, oracle_log_val)?;
         //msg!("Atellix: Rates - Swap: {} Base: {}", swap_rate.to_string(), base_rate.to_string());
         let input_val: u128 = inp_tokens as u128;
-        let result: u128 = calculate_swap(current_data, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals, inp_merchant)?;
+        let result: u128 = calculate_swap(current_data, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals)?;
         //msg!("Atellix: Result: {}", result.to_string());
 
         let tokens_inb: u64;
@@ -1328,40 +1281,7 @@ pub mod swap_contract {
         }
 
         let inbound_fees = (sw.fees_inbound && inp_swap_direction) || (!sw.fees_inbound && !inp_swap_direction);
-        let tokens_fee: u64 = calculate_fee(current_data, inbound_fees, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals, inp_merchant)?;
-
-        /*msg!("Atellix: Inb: {} Out: {}", tokens_inb.to_string(), tokens_out.to_string());
-        if inbound_fees {
-            msg!("Atellix: Fee Inb: {}", tokens_fee.to_string());
-        } else {
-            msg!("Atellix: Fee Out: {}", tokens_fee.to_string());
-        }*/
-
-        if inp_merchant {
-            if tokens_inb > merchant_revenue {
-                msg!("Inbound token exceeds merchant balance");
-                return Err(ErrorCode::Overflow.into());
-            }
-
-            // Record merchant revenue
-            let root_seeds = &[ctx.program_id.as_ref(), &[inp_root_nonce]];
-            let root_signer = &[&root_seeds[..]];
-            let na_program = ctx.remaining_accounts.get(merchant_offset + 2).unwrap(); // NetAuthority Program
-            let na_accounts = RecordRevenue {
-                revenue_admin: ctx.remaining_accounts.get(merchant_offset).unwrap().clone(), // Swap Root Account
-                merchant_approval: ctx.remaining_accounts.get(merchant_offset + 3).unwrap().clone(),
-            };
-            let na_ctx = CpiContext::new_with_signer(na_program.clone(), na_accounts, root_signer);
- 
-            //msg!("Atellix: Attempt to record revenue withdrawal");
-            net_authority::cpi::record_revenue(na_ctx, false, tokens_inb)?;
-
-            // Reload data after CPI call
-            let acc_mrch_approval = ctx.remaining_accounts.get(merchant_offset + 3).unwrap();
-            let mut aprv_data: &[u8] = &acc_mrch_approval.try_borrow_data()?;
-            let mrch_approval = MerchantApproval::try_deserialize(&mut aprv_data)?;
-            merchant_tx_id = mrch_approval.tx_count;
-        }
+        let tokens_fee: u64 = calculate_fee(current_data, inbound_fees, inp_is_buy, input_val, swap_rate, base_rate, extra_decimals)?;
 
         //msg!("Atellix: Available Outbound Tokens: {}", out_info.amount.to_string());
         //msg!("Atellix: New Inbound Amount: {}", inb_info.amount.to_string());
@@ -1441,8 +1361,8 @@ pub mod swap_contract {
             use_oracle: oracle_log_inuse,
             oracle_val: oracle_log_val,
             swap_tx: swr.swap_tx_count,
-            merchant_tx_id: merchant_tx_id,
-            merchant_swap: inp_merchant,
+            merchant_tx_id: 0,
+            merchant_swap: false,
             tokens_outstanding: swr.tokens_outstanding,
             cost_basis: swr.cost_basis,
         });
@@ -1621,7 +1541,7 @@ pub struct TokenData {
     pub rate_base: u64,                 // Base rate
     pub amount: u64,                    // Number of tokens in vault for this swap
     pub decimals: u8,                   // Mint decimal places
-    pub merchant: bool,                 // Enable merchant-only, no-fee swaps
+    pub merchant: bool,                 // Enable merchant-only, no-fee swaps (*** deprecated ***)
 }
 unsafe impl Pod for TokenData {}
 unsafe impl Zeroable for TokenData {}

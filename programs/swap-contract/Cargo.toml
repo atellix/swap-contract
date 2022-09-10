@@ -16,12 +16,13 @@ cpi = ["no-entrypoint"]
 default = ["no-log-ix-name"]
 
 [dependencies]
-anchor-lang = { version = "0.24.2", features = ["init-if-needed"] }
-anchor-spl = "0.24.2"
-switchboard-v2 = "0.1.10"
-solana-program = "1.9.29"
+anchor-lang = { version = "0.25.0", features = ["init-if-needed"] }
+anchor-spl = "0.25.0"
+solana-program = "1.10.29"
 bytemuck = "1.7.2"
 num_enum = "0.5.4"
 byte-slice-cast = "1.0.0"
 slab-alloc = { version = "1.0.0", path = "/Users/mfrager/Build/solana/crates/slab-alloc" }
 net-authority = { version = "0.1.0", path = "/Users/mfrager/Build/solana/net-authority/programs/net-authority", features = ["cpi"] }
+switchboard-v2 = { version = "0.1.14", path = "/Users/mfrager/Build/solana/switchboard-v2/libraries/rs" }
+
