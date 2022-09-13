@@ -31,7 +31,7 @@ async function main() {
     authDataPK = new PublicKey(swapCache.swapContractRBAC)
     swapAdmin1 = importSecretKey(netKeys['swap-update-1-secret'])
 
-    let swapName = 'wsol-usdv'
+    let swapName = 'usdc-usdv'
     let swapSpec = await jsonFileRead('../../data/swap-' + swapName + '.json')
 
     var collateralMint = new PublicKey(swapSpec.inbMint)
@@ -56,14 +56,14 @@ async function main() {
         false, // oracle range check
         new anchor.BN(0), // range min
         new anchor.BN(0), // range max
-        true, // swap direction
+        false, // swap direction
         false, // basis rates
-        true, // oracle rates
+        false, // oracle rates
         false, // oracle max
         false, // oracle inverse
-        new anchor.BN(10 * 10**4), // swap rate
-        new anchor.BN(10 * 10**9), // base rate
-        50, // fees basis points
+        new anchor.BN(1), // swap rate
+        new anchor.BN(100), // base rate
+        0, // fees basis points
         true, // fees on inbound token
         false, // merchant swap
         new anchor.BN(uuid1), // uuid
@@ -77,9 +77,9 @@ async function main() {
                 inbMint: collateralMint,
                 outMint: issuingMint,
             },
-            remainingAccounts: [
+            /*remainingAccounts: [
                 { pubkey: oraclePK, isWritable: false, isSigner: false },
-            ],
+            ],*/
             signers: [swapAdmin1],
         }
     )
